@@ -1,0 +1,77 @@
+"""Test per le metriche di backtesting."""
+
+import pytest
+from src.backtesting.metrics import win_rate, profit_factor, max_drawdown, sharpe_ratio
+
+
+class TestWinRate:
+    """Test per win_rate."""
+
+    def test_all_winners(self):
+        trades = [{"pnl": 10.0}, {"pnl": 20.0}, {"pnl": 5.0}]
+        assert win_rate(trades) == 100.0
+
+    def test_all_losers(self):
+        trades = [{"pnl": -10.0}, {"pnl": -20.0}]
+        assert win_rate(trades) == 0.0
+
+    def test_mixed(self):
+        trades = [{"pnl": 10.0}, {"pnl": -5.0}, {"pnl": 20.0}, {"pnl": -3.0}]
+        assert win_rate(trades) == 50.0
+
+    def test_empty(self):
+        assert win_rate([]) == 0.0
+
+
+class TestProfitFactor:
+    """Test per profit_factor."""
+
+    def test_profitable(self):
+        trades = [{"pnl": 30.0}, {"pnl": -10.0}]
+        assert profit_factor(trades) == 3.0
+
+    def test_no_losses(self):
+        trades = [{"pnl": 10.0}, {"pnl": 20.0}]
+        assert profit_factor(trades) == float("inf")
+
+    def test_no_wins(self):
+        trades = [{"pnl": -10.0}, {"pnl": -20.0}]
+        assert profit_factor(trades) == 0.0
+
+    def test_empty(self):
+        assert profit_factor([]) == 0.0
+
+
+class TestMaxDrawdown:
+    """Test per max_drawdown."""
+
+    def test_simple_drawdown(self):
+        # Equity: 100 -> 110 -> 90 -> 120
+        trades = [{"pnl": 10.0}, {"pnl": -20.0}, {"pnl": 30.0}]
+        dd = max_drawdown(trades, initial_capital=100.0)
+        # Peak = 110, trough = 90, drawdown = 20/110 = 18.18%
+        assert abs(dd - 18.18) < 0.1
+
+    def test_no_drawdown(self):
+        trades = [{"pnl": 10.0}, {"pnl": 20.0}]
+        assert max_drawdown(trades, initial_capital=100.0) == 0.0
+
+    def test_empty(self):
+        assert max_drawdown([], initial_capital=100.0) == 0.0
+
+
+class TestSharpeRatio:
+    """Test per sharpe_ratio."""
+
+    def test_positive_sharpe(self):
+        trades = [{"pnl": 10.0}, {"pnl": 12.0}, {"pnl": 8.0}, {"pnl": 11.0}]
+        sr = sharpe_ratio(trades)
+        assert sr > 0
+
+    def test_all_same_returns(self):
+        trades = [{"pnl": 10.0}, {"pnl": 10.0}, {"pnl": 10.0}]
+        sr = sharpe_ratio(trades)
+        assert sr == float("inf")
+
+    def test_empty(self):
+        assert sharpe_ratio([]) == 0.0
