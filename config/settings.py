@@ -32,6 +32,12 @@ STOP_LOSS_PCT: float = 0.5   # 0.5%
 TAKE_PROFIT_PCT: float = 1.0  # 1.0%
 MAX_DAILY_LOSS_PCT: float = 3.0
 MAX_DAILY_TRADES: int = 20
+RISK_PER_TRADE_PCT: float = 1.0       # % capitale rischiato per trade
+SL_ATR_MULTIPLIER: float = 1.5        # moltiplicatore ATR per stop-loss
+TP_ATR_MULTIPLIER: float = 2.0        # moltiplicatore ATR per take-profit
+TRAILING_ATR_MULTIPLIER: float = 1.0  # moltiplicatore ATR per trailing stop
+MAX_POSITION_SIZE_PCT: float = 20.0   # cap massimo size come % del capitale
+MIN_ORDER_SIZE_USDT: float = 10.0     # ordine minimo Binance BTC/USDT
 
 # --- Bot ---
 BOT_MODE: str = os.getenv("BOT_MODE", "paper")
