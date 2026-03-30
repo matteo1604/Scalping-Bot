@@ -48,6 +48,12 @@ class TestCalculateLevels:
         assert levels["take_profit"] == pytest.approx(50000.0 * (1 - 1.0 / 100))  # 49500
 
 
+    def test_invalid_side_raises_error(self, rm):
+        """Side invalido deve lanciare ValueError."""
+        with pytest.raises(ValueError, match="Invalid side"):
+            rm.calculate_levels(entry_price=50000.0, side="long", atr=100.0)
+
+
 from src.sentiment.claude_sentiment import SentimentResult
 
 
@@ -185,6 +191,14 @@ class TestUpdateTrailingStop:
         )
         # new candidate = 50200 + 100 = 50300 > 50100
         assert new_trail == pytest.approx(50100.0)
+
+
+    def test_invalid_side_raises_error(self, rm):
+        """Side invalido deve lanciare ValueError."""
+        with pytest.raises(ValueError, match="Invalid side"):
+            rm.update_trailing_stop(
+                side="long", current_price=50000.0, current_trailing=49900.0, atr=100.0,
+            )
 
 
 class TestDailyLimits:

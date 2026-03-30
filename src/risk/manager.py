@@ -21,8 +21,12 @@ from config.settings import (
     TP_ATR_MULTIPLIER,
     TRAILING_ATR_MULTIPLIER,
 )
-from src.sentiment.claude_sentiment import SentimentResult
+from typing import TYPE_CHECKING
+
 from src.utils.logger import setup_logger
+
+if TYPE_CHECKING:
+    from src.sentiment.claude_sentiment import SentimentResult
 
 logger = setup_logger("risk")
 
@@ -93,6 +97,9 @@ class RiskManager:
         Returns:
             Dict con chiavi "stop_loss", "take_profit", "trailing_stop".
         """
+        if side not in ("LONG", "SHORT"):
+            raise ValueError(f"Invalid side: {side!r}. Must be 'LONG' or 'SHORT'.")
+
         if atr is not None and atr > 0:
             sl_dist = atr * self.sl_atr_multiplier
             tp_dist = atr * self.tp_atr_multiplier
@@ -184,6 +191,9 @@ class RiskManager:
         Returns:
             Nuovo trailing stop price.
         """
+        if side not in ("LONG", "SHORT"):
+            raise ValueError(f"Invalid side: {side!r}. Must be 'LONG' or 'SHORT'.")
+
         trail_dist = atr * self.trailing_atr_multiplier
 
         if side == "LONG":
@@ -211,7 +221,7 @@ class RiskManager:
                            self._daily_trades, self.max_daily_trades)
             return False
         max_loss = capital * self.max_daily_loss_pct / 100.0
-        if abs(self._daily_pnl) >= max_loss and self._daily_pnl < 0:
+        if self._daily_pnl <= -max_loss:
             logger.warning("Limite perdita giornaliera raggiunto: %.2f/%.2f",
                            self._daily_pnl, -max_loss)
             return False
