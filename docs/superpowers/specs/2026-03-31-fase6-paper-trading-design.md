@@ -28,12 +28,15 @@ class TradingLoop:
     def run(self) -> None:                    # loop infinito con graceful shutdown
     def _wait_for_candle(self) -> None:       # sleep fino a prossima chiusura 5min
     def _tick(self) -> None:                  # singolo ciclo completo
+    def _check_daily_reset(self) -> None:     # reset contatori se cambio giorno
     def _check_open_position(self, row) -> None:  # SL/TP/trailing su posizione aperta
-    def _open_position(self, signal, row, sentiment) -> None:  # apri nuova posizione
-    def _close_position(self, row, reason) -> None:  # chiudi posizione
+    def _open_position(self, signal, row, sentiment) -> None:
+    def _close_position(self, row, reason) -> None:
+    def _recover_position(self) -> None:      # ripristina posizione da status file
 ```
 
 **Logica di `_tick()`:**
+- Check cambio giorno → `_check_daily_reset()`
 - Fetch 100 candele OHLCV
 - Calcola indicatori + prev indicators, dropna
 - Se posizione aperta: check trailing stop update + SL/TP hit sulla ultima candela
@@ -45,10 +48,23 @@ class TradingLoop:
 **Gestione posizione aperta:**
 - Tiene un dict `_position` con: side, entry_price, entry_time, stop_loss, take_profit, trailing_stop, size_usdt
 - Ad ogni tick: aggiorna trailing stop via `risk_manager.update_trailing_stop()`
-- Check: close price <= SL (LONG) o >= SL (SHORT) → chiudi con "stop_loss"
-- Check: close price >= TP (LONG) o <= TP (SHORT) → chiudi con "take_profit"
-- Check: close price <= trailing (LONG) o >= trailing (SHORT) → chiudi con "trailing_stop"
+- Ordine check (conservativo — SL prima di TP):
+  1. Check SL: low <= SL (LONG) o high >= SL (SHORT) → chiudi con "stop_loss"
+  2. Check trailing: low <= trailing (LONG) o high >= trailing (SHORT) → chiudi con "trailing_stop"
+  3. Check TP: high >= TP (LONG) o low <= TP (SHORT) → chiudi con "take_profit"
+- Usa high/low della candela (non close) per check piu' realistici
+- Approccio conservativo: in caso di candela che tocca sia SL che TP, SL ha priorita'
 - Alla chiusura: calcola PnL, `risk_manager.record_trade()`, log
+
+**Recovery dopo crash:**
+- In `__init__`, chiama `_recover_position()`: se `data/paper_status.json` esiste e contiene una posizione aperta, ripristinala in `_position`
+- Log della recovery per trasparenza
+- Se il file non esiste o e' corrotto: parti senza posizione (nessun errore)
+
+**Reset giornaliero:**
+- `_check_daily_reset()`: confronta `date.today()` con `_last_date`
+- Se la data e' cambiata: chiama `risk_manager.reset_daily()`, resetta contatori interni (win count per win_rate), aggiorna `_last_date`
+- Chiamato all'inizio di ogni `_tick()`, prima di qualsiasi altra logica
 
 **Paper vs Live:**
 - Paper: log del trade, nessun ordine. `_position` gestita internamente.
@@ -93,7 +109,8 @@ Scrive `data/paper_status.json` ad ogni tick (overwrite).
 ```python
 class StatusWriter:
     def __init__(self, output_path: str = "data/paper_status.json") -> None: ...
-    def write(self, data: dict) -> None:  # scrive JSON atomicamente
+    def write(self, data: dict) -> None:           # scrive JSON atomicamente
+    def read(self) -> dict | None:                 # legge stato precedente (per recovery)
 ```
 
 **Contenuto del file:**
@@ -134,11 +151,13 @@ SENTIMENT_COOLDOWN_MIN: int = 15  # minuti tra chiamate sentiment
 
 ## Testing
 
-- **`StatusWriter`**: test che il JSON scritto sia valido e contenga tutte le chiavi attese
+- **`StatusWriter`**: test write (JSON valido con tutte le chiavi), test read (recupero stato), test read con file mancante/corrotto
 - **`SentimentCache`**: test cooldown (mock `time.time()`), test cache hit/miss
 - **`TradingLoop._tick()`**: test con mock di exchange, verifica il flusso corretto senza loop infinito
-- **`_check_open_position`**: test SL/TP/trailing hit per LONG e SHORT
+- **`_check_open_position`**: test SL/TP/trailing hit per LONG e SHORT, test priorita' SL su TP nella stessa candela
 - **`_open_position` / `_close_position`**: test che aggiornino correttamente lo stato
+- **`_recover_position`**: test recovery da file valido, test con file mancante, test con file corrotto
+- **`_check_daily_reset`**: test che il cambio data resetti i contatori
 - Il loop infinito `run()` non viene testato — si verifica via esecuzione paper manuale
 
 ## Error Handling
