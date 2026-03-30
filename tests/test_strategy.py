@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from src.strategies.combined import CombinedStrategy
+from src.sentiment.claude_sentiment import SentimentResult
 
 
 @pytest.fixture
@@ -135,3 +136,87 @@ class TestNoSignal:
         df = _make_df(rsi=float("nan"))
         signal = strategy.generate_signal(df)
         assert signal is None
+
+
+class TestSentimentFilter:
+    """Test per il filtro sentiment integrato nella strategia."""
+
+    def test_long_blocked_by_bearish_sentiment(self, strategy):
+        """LONG deve essere bloccato se sentiment e' bearish."""
+        df = _make_df(
+            ema_fast=35100.0, ema_slow=35050.0,
+            ema_fast_prev=35000.0, ema_slow_prev=35050.0,
+            rsi=55.0, volume=150.0, volume_ma=100.0,
+        )
+        sentiment = SentimentResult(
+            sentiment_score=-0.5, confidence=0.8,
+            top_events=["Crash"], recommendation="SELL",
+        )
+        signal = strategy.generate_signal(df, sentiment=sentiment)
+        assert signal is None
+
+    def test_long_allowed_by_bullish_sentiment(self, strategy):
+        """LONG deve passare se sentiment e' bullish."""
+        df = _make_df(
+            ema_fast=35100.0, ema_slow=35050.0,
+            ema_fast_prev=35000.0, ema_slow_prev=35050.0,
+            rsi=55.0, volume=150.0, volume_ma=100.0,
+        )
+        sentiment = SentimentResult(
+            sentiment_score=0.5, confidence=0.8,
+            top_events=["Rally"], recommendation="BUY",
+        )
+        signal = strategy.generate_signal(df, sentiment=sentiment)
+        assert signal == "LONG"
+
+    def test_short_blocked_by_bullish_sentiment(self, strategy):
+        """SHORT deve essere bloccato se sentiment e' bullish."""
+        df = _make_df(
+            ema_fast=35000.0, ema_slow=35050.0,
+            ema_fast_prev=35100.0, ema_slow_prev=35050.0,
+            rsi=45.0, volume=150.0, volume_ma=100.0,
+        )
+        sentiment = SentimentResult(
+            sentiment_score=0.5, confidence=0.8,
+            top_events=["Rally"], recommendation="BUY",
+        )
+        signal = strategy.generate_signal(df, sentiment=sentiment)
+        assert signal is None
+
+    def test_short_allowed_by_bearish_sentiment(self, strategy):
+        """SHORT deve passare se sentiment e' bearish."""
+        df = _make_df(
+            ema_fast=35000.0, ema_slow=35050.0,
+            ema_fast_prev=35100.0, ema_slow_prev=35050.0,
+            rsi=45.0, volume=150.0, volume_ma=100.0,
+        )
+        sentiment = SentimentResult(
+            sentiment_score=-0.5, confidence=0.8,
+            top_events=["Crash"], recommendation="SELL",
+        )
+        signal = strategy.generate_signal(df, sentiment=sentiment)
+        assert signal == "SHORT"
+
+    def test_no_sentiment_means_no_filter(self, strategy):
+        """Senza sentiment (None), il segnale tecnico passa direttamente."""
+        df = _make_df(
+            ema_fast=35100.0, ema_slow=35050.0,
+            ema_fast_prev=35000.0, ema_slow_prev=35050.0,
+            rsi=55.0, volume=150.0, volume_ma=100.0,
+        )
+        signal = strategy.generate_signal(df, sentiment=None)
+        assert signal == "LONG"
+
+    def test_low_confidence_sentiment_is_ignored(self, strategy):
+        """Sentiment con confidence bassa non deve bloccare il segnale."""
+        df = _make_df(
+            ema_fast=35100.0, ema_slow=35050.0,
+            ema_fast_prev=35000.0, ema_slow_prev=35050.0,
+            rsi=55.0, volume=150.0, volume_ma=100.0,
+        )
+        sentiment = SentimentResult(
+            sentiment_score=-0.8, confidence=0.1,
+            top_events=["FUD"], recommendation="SELL",
+        )
+        signal = strategy.generate_signal(df, sentiment=sentiment)
+        assert signal == "LONG"
