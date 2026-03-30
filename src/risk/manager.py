@@ -161,3 +161,34 @@ class RiskManager:
             size, capital, sl_distance, confidence_multiplier,
         )
         return size
+
+    def update_trailing_stop(
+        self,
+        side: str,
+        current_price: float,
+        current_trailing: float,
+        atr: float,
+    ) -> float:
+        """Aggiorna il trailing stop in base al prezzo corrente.
+
+        Il trailing si muove solo a favore della posizione:
+        - LONG: sale (max) ma mai scende
+        - SHORT: scende (min) ma mai sale
+
+        Args:
+            side: "LONG" o "SHORT".
+            current_price: Prezzo di mercato corrente.
+            current_trailing: Trailing stop attuale.
+            atr: Average True Range corrente.
+
+        Returns:
+            Nuovo trailing stop price.
+        """
+        trail_dist = atr * self.trailing_atr_multiplier
+
+        if side == "LONG":
+            candidate = current_price - trail_dist
+            return max(candidate, current_trailing)
+        else:  # SHORT
+            candidate = current_price + trail_dist
+            return min(candidate, current_trailing)

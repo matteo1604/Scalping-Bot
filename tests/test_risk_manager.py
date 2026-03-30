@@ -149,3 +149,39 @@ class TestCalculatePositionSize:
         # raw_size = (10000 * 0.01 * 0.7) / 0.1 = 700
         # capped = min(700, 2000) = 700
         assert size == pytest.approx(700.0)
+
+
+class TestUpdateTrailingStop:
+    """Test per update_trailing_stop."""
+
+    def test_long_trailing_moves_up(self, rm):
+        """LONG: trailing sale quando il prezzo sale."""
+        new_trail = rm.update_trailing_stop(
+            side="LONG", current_price=50200.0, current_trailing=49900.0, atr=100.0,
+        )
+        # new candidate = 50200 - 100*1.0 = 50100 > 49900
+        assert new_trail == pytest.approx(50100.0)
+
+    def test_long_trailing_never_moves_down(self, rm):
+        """LONG: trailing non scende se il prezzo scende."""
+        new_trail = rm.update_trailing_stop(
+            side="LONG", current_price=49950.0, current_trailing=49900.0, atr=100.0,
+        )
+        # new candidate = 49950 - 100 = 49850 < 49900
+        assert new_trail == pytest.approx(49900.0)
+
+    def test_short_trailing_moves_down(self, rm):
+        """SHORT: trailing scende quando il prezzo scende."""
+        new_trail = rm.update_trailing_stop(
+            side="SHORT", current_price=49800.0, current_trailing=50100.0, atr=100.0,
+        )
+        # new candidate = 49800 + 100*1.0 = 49900 < 50100
+        assert new_trail == pytest.approx(49900.0)
+
+    def test_short_trailing_never_moves_up(self, rm):
+        """SHORT: trailing non sale se il prezzo sale."""
+        new_trail = rm.update_trailing_stop(
+            side="SHORT", current_price=50200.0, current_trailing=50100.0, atr=100.0,
+        )
+        # new candidate = 50200 + 100 = 50300 > 50100
+        assert new_trail == pytest.approx(50100.0)
