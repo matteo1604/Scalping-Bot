@@ -21,6 +21,7 @@ from config.settings import (
     TP_ATR_MULTIPLIER,
     TRAILING_ATR_MULTIPLIER,
 )
+from src.sentiment.claude_sentiment import SentimentResult
 from src.utils.logger import setup_logger
 
 logger = setup_logger("risk")
@@ -115,3 +116,48 @@ class RiskManager:
             side, entry_price, sl, tp, trailing,
         )
         return {"stop_loss": sl, "take_profit": tp, "trailing_stop": trailing}
+
+    def calculate_position_size(
+        self,
+        capital: float,
+        entry_price: float,
+        sl_price: float,
+        sentiment: SentimentResult | None = None,
+    ) -> float:
+        """Calcola la dimensione della posizione in USDT.
+
+        Usa il metodo del rischio fisso: rischia una % fissa del capitale per trade.
+        La size e' inversamente proporzionale alla distanza dello SL.
+        Il sentiment modula la size tramite confidence (clamp [0.5, 1.0]).
+
+        Args:
+            capital: Capitale disponibile in USDT.
+            entry_price: Prezzo di ingresso.
+            sl_price: Prezzo dello stop-loss.
+            sentiment: Risultato sentiment (opzionale).
+
+        Returns:
+            Size in USDT. 0.0 se sotto il minimo exchange o input invalidi.
+        """
+        if capital <= 0 or entry_price <= 0:
+            return 0.0
+
+        sl_distance = abs(entry_price - sl_price) / entry_price
+        if sl_distance == 0:
+            return 0.0
+
+        confidence_multiplier = 1.0
+        if sentiment is not None:
+            confidence_multiplier = max(0.5, min(1.0, sentiment.confidence))
+
+        raw_size = (capital * self.risk_per_trade_pct / 100.0) * confidence_multiplier / sl_distance
+        size = min(raw_size, capital * self.max_position_size_pct / 100.0)
+
+        if size < self.min_order_size:
+            return 0.0
+
+        logger.debug(
+            "Position size: %.2f USDT (capital=%.0f, sl_dist=%.4f, conf=%.2f)",
+            size, capital, sl_distance, confidence_multiplier,
+        )
+        return size

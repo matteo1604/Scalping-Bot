@@ -46,3 +46,106 @@ class TestCalculateLevels:
         levels = rm.calculate_levels(entry_price=50000.0, side="SHORT", atr=None)
         assert levels["stop_loss"] == pytest.approx(50000.0 * (1 + 0.5 / 100))  # 50250
         assert levels["take_profit"] == pytest.approx(50000.0 * (1 - 1.0 / 100))  # 49500
+
+
+from src.sentiment.claude_sentiment import SentimentResult
+
+
+class TestCalculatePositionSize:
+    """Test per calculate_position_size."""
+
+    def test_basic_position_size(self, rm):
+        """Size basata su rischio fisso senza sentiment."""
+        size = rm.calculate_position_size(
+            capital=10000.0, entry_price=50000.0, sl_price=49500.0,
+        )
+        # sl_distance = 500/50000 = 0.01
+        # raw_size = (10000 * 1.0/100) / 0.01 = 10000
+        # capped = min(10000, 10000 * 20/100) = 2000
+        assert size == pytest.approx(2000.0)
+
+    def test_small_sl_hits_cap(self, rm):
+        """SL molto vicino -> size enorme, deve essere cappata."""
+        size = rm.calculate_position_size(
+            capital=10000.0, entry_price=50000.0, sl_price=49990.0,
+        )
+        # sl_distance = 10/50000 = 0.0002
+        # raw_size = 100 / 0.0002 = 500000 -> capped at 2000
+        assert size == pytest.approx(2000.0)
+
+    def test_below_minimum_returns_zero(self, rm):
+        """Size sotto il minimo exchange -> 0.0."""
+        size = rm.calculate_position_size(
+            capital=50.0, entry_price=50000.0, sl_price=49500.0,
+        )
+        # raw_size = (50 * 0.01) / 0.01 = 50
+        # capped = min(50, 50*0.2) = 10.0
+        # 10.0 >= MIN_ORDER_SIZE (10.0), just at the boundary
+        assert size == pytest.approx(10.0)
+
+    def test_very_small_capital_returns_zero(self, rm):
+        """Capitale minimo -> size sotto exchange minimum -> 0.0."""
+        size = rm.calculate_position_size(
+            capital=30.0, entry_price=50000.0, sl_price=49500.0,
+        )
+        # raw_size = (30 * 0.01) / 0.01 = 30
+        # capped = min(30, 30*0.2) = 6.0 < 10.0
+        assert size == 0.0
+
+    def test_zero_capital_returns_zero(self, rm):
+        """Capitale zero -> 0.0."""
+        size = rm.calculate_position_size(
+            capital=0.0, entry_price=50000.0, sl_price=49500.0,
+        )
+        assert size == 0.0
+
+    def test_entry_equals_sl_returns_zero(self, rm):
+        """entry_price == sl_price (divisione per zero) -> 0.0."""
+        size = rm.calculate_position_size(
+            capital=10000.0, entry_price=50000.0, sl_price=50000.0,
+        )
+        assert size == 0.0
+
+    def test_sentiment_high_confidence_full_size(self, rm):
+        """Sentiment con confidence alta (1.0) -> multiplier 1.0, size piena."""
+        sentiment = SentimentResult(
+            sentiment_score=0.5, confidence=1.0,
+            top_events=[], recommendation="BUY",
+        )
+        size_with = rm.calculate_position_size(
+            capital=10000.0, entry_price=50000.0, sl_price=49500.0,
+            sentiment=sentiment,
+        )
+        size_without = rm.calculate_position_size(
+            capital=10000.0, entry_price=50000.0, sl_price=49500.0,
+        )
+        assert size_with == size_without
+
+    def test_sentiment_low_confidence_reduced_size(self, rm):
+        """Sentiment con confidence bassa -> multiplier 0.5, size dimezzata."""
+        sentiment = SentimentResult(
+            sentiment_score=0.5, confidence=0.1,
+            top_events=[], recommendation="BUY",
+        )
+        size = rm.calculate_position_size(
+            capital=10000.0, entry_price=50000.0, sl_price=49500.0,
+            sentiment=sentiment,
+        )
+        # raw_size = (10000 * 0.01 * 0.5) / 0.01 = 5000
+        # capped = min(5000, 2000) = 2000
+        assert size == pytest.approx(2000.0)
+
+    def test_sentiment_mid_confidence_scales(self, rm):
+        """Sentiment con confidence 0.7 -> multiplier 0.7."""
+        sentiment = SentimentResult(
+            sentiment_score=0.3, confidence=0.7,
+            top_events=[], recommendation="BUY",
+        )
+        size = rm.calculate_position_size(
+            capital=10000.0, entry_price=50000.0, sl_price=45000.0,
+            sentiment=sentiment,
+        )
+        # sl_distance = 5000/50000 = 0.1
+        # raw_size = (10000 * 0.01 * 0.7) / 0.1 = 700
+        # capped = min(700, 2000) = 700
+        assert size == pytest.approx(700.0)
