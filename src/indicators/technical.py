@@ -47,3 +47,20 @@ def add_indicators(
     result["volume_ma"] = result["volume"].rolling(window=volume_ma_period).mean()
 
     return result
+
+
+def add_prev_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """Aggiunge colonne con valori degli indicatori della candela precedente.
+
+    Necessario per rilevare crossover (confronto tra candela corrente e precedente).
+
+    Args:
+        df: DataFrame con colonne ema_fast e ema_slow.
+
+    Returns:
+        DataFrame con colonne ema_fast_prev e ema_slow_prev aggiunte.
+    """
+    result = df.copy()
+    result["ema_fast_prev"] = result["ema_fast"].shift(1)
+    result["ema_slow_prev"] = result["ema_slow"].shift(1)
+    return result

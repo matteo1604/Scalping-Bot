@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import pytest
 
-from src.indicators.technical import add_indicators
+from src.indicators.technical import add_indicators, add_prev_indicators
 
 
 @pytest.fixture
@@ -78,3 +78,24 @@ class TestAddIndicators:
         )
         assert "ema_fast" in result.columns
         assert "rsi" in result.columns
+
+
+class TestAddPrevIndicators:
+    """Test per add_prev_indicators."""
+
+    def test_adds_prev_columns(self, sample_ohlcv):
+        """Deve aggiungere ema_fast_prev e ema_slow_prev."""
+        df = add_indicators(sample_ohlcv)
+        result = add_prev_indicators(df)
+        assert "ema_fast_prev" in result.columns
+        assert "ema_slow_prev" in result.columns
+
+    def test_prev_is_shifted(self, sample_ohlcv):
+        """Le colonne _prev devono essere i valori della riga precedente."""
+        df = add_indicators(sample_ohlcv)
+        result = add_prev_indicators(df)
+        # Usa righe dove EMA non e' NaN (dopo il warmup period)
+        valid = result.dropna(subset=["ema_fast", "ema_fast_prev"])
+        idx = valid.index[0]
+        pos = result.index.get_loc(idx)
+        assert result["ema_fast_prev"].iloc[pos] == result["ema_fast"].iloc[pos - 1]
