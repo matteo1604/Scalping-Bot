@@ -192,3 +192,45 @@ class RiskManager:
         else:  # SHORT
             candidate = current_price + trail_dist
             return min(candidate, current_trailing)
+
+    def can_trade(self, capital: float) -> bool:
+        """Verifica se i limiti giornalieri consentono un nuovo trade.
+
+        Controlla sia il numero massimo di trade che la perdita massima giornaliera.
+
+        Args:
+            capital: Capitale corrente in USDT.
+
+        Returns:
+            True se il trade e' consentito.
+        """
+        if capital <= 0:
+            return False
+        if self._daily_trades >= self.max_daily_trades:
+            logger.warning("Limite giornaliero trade raggiunto: %d/%d",
+                           self._daily_trades, self.max_daily_trades)
+            return False
+        max_loss = capital * self.max_daily_loss_pct / 100.0
+        if abs(self._daily_pnl) >= max_loss and self._daily_pnl < 0:
+            logger.warning("Limite perdita giornaliera raggiunto: %.2f/%.2f",
+                           self._daily_pnl, -max_loss)
+            return False
+        return True
+
+    def record_trade(self, pnl: float) -> None:
+        """Registra un trade completato per il tracking giornaliero.
+
+        Args:
+            pnl: Profitto/perdita del trade in USDT.
+        """
+        self._daily_trades += 1
+        self._daily_pnl += pnl
+        logger.debug("Trade #%d registrato: PnL=%.2f, Totale=%.2f",
+                      self._daily_trades, pnl, self._daily_pnl)
+
+    def reset_daily(self) -> None:
+        """Resetta i contatori giornalieri."""
+        logger.info("Reset contatori giornalieri (trades=%d, pnl=%.2f)",
+                     self._daily_trades, self._daily_pnl)
+        self._daily_trades = 0
+        self._daily_pnl = 0.0

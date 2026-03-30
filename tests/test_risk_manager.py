@@ -185,3 +185,47 @@ class TestUpdateTrailingStop:
         )
         # new candidate = 50200 + 100 = 50300 > 50100
         assert new_trail == pytest.approx(50100.0)
+
+
+class TestDailyLimits:
+    """Test per can_trade, record_trade, reset_daily."""
+
+    def test_can_trade_initially(self, rm):
+        """Nessun trade registrato -> puo' tradare."""
+        assert rm.can_trade(capital=1000.0) is True
+
+    def test_cannot_trade_after_max_trades(self, rm):
+        """Dopo MAX_DAILY_TRADES (20) -> non puo' tradare."""
+        for _ in range(20):
+            rm.record_trade(pnl=1.0)
+        assert rm.can_trade(capital=1000.0) is False
+
+    def test_cannot_trade_after_max_loss(self, rm):
+        """Dopo perdita >= MAX_DAILY_LOSS_PCT (3%) del capitale -> non puo' tradare."""
+        rm.record_trade(pnl=-35.0)  # -3.5% of 1000
+        assert rm.can_trade(capital=1000.0) is False
+
+    def test_can_trade_under_loss_limit(self, rm):
+        """Perdita sotto il limite -> puo' ancora tradare."""
+        rm.record_trade(pnl=-20.0)  # -2% of 1000
+        assert rm.can_trade(capital=1000.0) is True
+
+    def test_reset_daily_clears_counters(self, rm):
+        """reset_daily resetta trades e pnl."""
+        for _ in range(20):
+            rm.record_trade(pnl=-5.0)
+        assert rm.can_trade(capital=1000.0) is False
+        rm.reset_daily()
+        assert rm.can_trade(capital=1000.0) is True
+
+    def test_record_trade_accumulates_pnl(self, rm):
+        """PnL si accumula correttamente."""
+        rm.record_trade(pnl=-10.0)
+        rm.record_trade(pnl=-10.0)
+        rm.record_trade(pnl=-10.0)
+        # total = -30, 3% of 1000 = 30 -> at limit
+        assert rm.can_trade(capital=1000.0) is False
+
+    def test_zero_capital_cannot_trade(self, rm):
+        """Capitale zero -> non puo' tradare."""
+        assert rm.can_trade(capital=0.0) is False
