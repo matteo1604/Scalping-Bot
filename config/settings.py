@@ -43,3 +43,10 @@ MIN_ORDER_SIZE_USDT: float = 10.0     # ordine minimo Binance BTC/USDT
 # --- Bot ---
 BOT_MODE: str = os.getenv("BOT_MODE", "paper")
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+
+# --- Notifiche ---
+SLACK_WEBHOOK_URL: str = os.getenv("SLACK_WEBHOOK_URL", "")
+
+# --- Live ---
+LIVE_CAPITAL_USDT: float = 50.0  # capitale allocato per live trading
+KILL_SWITCH_PATH: str = "data/kill.flag"
