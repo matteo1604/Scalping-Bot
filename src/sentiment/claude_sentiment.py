@@ -9,11 +9,12 @@ Responsabilità:
 
 import json
 import re
+import time
 from dataclasses import dataclass, field
 
 from anthropic import Anthropic
 
-from config.settings import ANTHROPIC_API_KEY, SENTIMENT_MODEL
+from config.settings import ANTHROPIC_API_KEY, SENTIMENT_COOLDOWN_MIN, SENTIMENT_MODEL
 from src.utils.logger import setup_logger
 
 logger = setup_logger("sentiment")
@@ -120,12 +121,19 @@ class ClaudeSentiment:
         self,
         api_key: str = ANTHROPIC_API_KEY,
         model: str = SENTIMENT_MODEL,
+        cooldown_minutes: int = SENTIMENT_COOLDOWN_MIN,
     ) -> None:
         self._client = Anthropic(api_key=api_key)
         self._model = model
+        self._cooldown_seconds = cooldown_minutes * 60
+        self._last_result: SentimentResult | None = None
+        self._last_call_time: float = 0.0
 
     def analyze(self, symbol: str = "BTC") -> SentimentResult:
         """Esegue l'analisi sentiment tramite Claude API.
+
+        Usa un cooldown cache: se l'ultima chiamata e' avvenuta meno di
+        cooldown_seconds fa, restituisce il risultato cached.
 
         Args:
             symbol: Simbolo crypto da analizzare.
@@ -133,6 +141,12 @@ class ClaudeSentiment:
         Returns:
             SentimentResult con score, confidence, eventi e raccomandazione.
         """
+        now = time.time()
+        if self._last_result is not None and (now - self._last_call_time) < self._cooldown_seconds:
+            remaining = self._cooldown_seconds - (now - self._last_call_time)
+            logger.info("Sentiment cache hit (%.0fs remaining)", remaining)
+            return self._last_result
+
         try:
             message = self._client.messages.create(
                 model=self._model,
@@ -159,6 +173,8 @@ class ClaudeSentiment:
                 "Sentiment %s: score=%.2f confidence=%.2f rec=%s",
                 symbol, result.sentiment_score, result.confidence, result.recommendation,
             )
+            self._last_result = result
+            self._last_call_time = now
             return result
 
         except Exception as e:
