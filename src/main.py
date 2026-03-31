@@ -7,6 +7,7 @@ Gestisce il ciclo: fetch dati -> calcolo indicatori -> segnale -> sentiment -> e
 from __future__ import annotations
 
 import argparse
+import os
 import signal
 import time
 from datetime import date, datetime, timezone
@@ -14,7 +15,11 @@ from datetime import date, datetime, timezone
 from config.settings import (
     BINANCE_API_KEY,
     BINANCE_API_SECRET,
+    KILL_SWITCH_PATH,
+    LIVE_CAPITAL_USDT,
     LOG_LEVEL,
+    MIN_ORDER_SIZE_USDT,
+    SLACK_WEBHOOK_URL,
     SYMBOL,
     TIMEFRAME,
     TRADE_AMOUNT_USDT,
@@ -25,6 +30,7 @@ from src.risk.manager import RiskManager
 from src.sentiment.claude_sentiment import ClaudeSentiment, SentimentResult
 from src.strategies.combined import CombinedStrategy
 from src.utils.logger import setup_logger
+from src.utils.notifier import SlackNotifier
 from src.utils.status import StatusWriter
 
 logger = setup_logger("bot", level=LOG_LEVEL)
@@ -42,9 +48,15 @@ class TradingLoop:
         status_path: Path del file di stato JSON.
     """
 
-    def __init__(self, mode: str = "paper", status_path: str = "data/paper_status.json") -> None:
+    def __init__(
+        self,
+        mode: str = "paper",
+        status_path: str = "data/paper_status.json",
+        kill_switch_path: str = KILL_SWITCH_PATH,
+    ) -> None:
         self.mode = mode
         self._running = False
+        self._kill_switch_path = kill_switch_path
 
         # Componenti
         self._exchange = BinanceExchange(
@@ -55,6 +67,7 @@ class TradingLoop:
         self._sentiment = ClaudeSentiment()
         self._risk = RiskManager()
         self._status = StatusWriter(output_path=status_path)
+        self._notifier = SlackNotifier(webhook_url=SLACK_WEBHOOK_URL)
 
         # Stato posizione
         self._position: dict | None = None
@@ -76,7 +89,13 @@ class TradingLoop:
         signal.signal(signal.SIGINT, self._handle_shutdown)
         signal.signal(signal.SIGTERM, self._handle_shutdown)
 
+        if not self._preflight_checks():
+            logger.error("Pre-flight checks falliti — bot non avviato")
+            self._running = False
+            return
+
         logger.info("Bot avviato in modalita': %s", self.mode)
+        self._notifier.notify("Bot avviato in modalita': %s" % self.mode)
 
         while self._running:
             try:
@@ -88,11 +107,84 @@ class TradingLoop:
                 logger.exception("Errore nel tick, riprovo al prossimo ciclo")
 
         logger.info("Bot fermato.")
+        self._notifier.notify("Bot fermato")
 
     def _handle_shutdown(self, signum: int, frame) -> None:
         """Handler per SIGINT/SIGTERM."""
         logger.info("Shutdown richiesto (signal=%d)", signum)
         self._running = False
+
+    def _check_kill_switch(self) -> bool:
+        """Controlla se il kill switch file e' presente.
+
+        Returns:
+            True se il kill switch e' attivo (bot deve fermarsi).
+        """
+        if not os.path.exists(self._kill_switch_path):
+            return False
+
+        logger.warning("KILL SWITCH attivato: %s", self._kill_switch_path)
+        self._notifier.notify("KILL SWITCH attivato — bot fermato", level="warning")
+
+        if self._position is not None:
+            logger.warning(
+                "Posizione aperta rimasta: %s @ %.2f (size=%.2f USDT)",
+                self._position["side"],
+                self._position["entry_price"],
+                self._position["size_usdt"],
+            )
+            self._notifier.notify(
+                "Posizione aperta rimasta: %s @ %.2f" % (
+                    self._position["side"], self._position["entry_price"],
+                ),
+                level="warning",
+            )
+
+        self._running = False
+        return True
+
+    def _preflight_checks(self) -> bool:
+        """Esegue verifiche di sicurezza prima di avviare il loop live.
+
+        Returns:
+            True se tutti i check passano.
+        """
+        if self.mode != "live":
+            return True
+
+        # 1. API keys
+        if not BINANCE_API_KEY or not BINANCE_API_SECRET:
+            logger.error("Pre-flight FAIL: API keys Binance mancanti")
+            return False
+
+        # 2. Connessione exchange e balance
+        try:
+            balance = self._exchange.get_balance("USDT")
+        except Exception:
+            logger.exception("Pre-flight FAIL: impossibile connettersi a Binance")
+            return False
+
+        # 3. Balance minimo
+        if balance < MIN_ORDER_SIZE_USDT:
+            logger.error(
+                "Pre-flight FAIL: balance %.2f USDT < minimo %.2f USDT",
+                balance, MIN_ORDER_SIZE_USDT,
+            )
+            return False
+
+        # 4. Kill switch
+        if os.path.exists(self._kill_switch_path):
+            logger.error("Pre-flight FAIL: kill switch gia' attivo (%s)", self._kill_switch_path)
+            return False
+
+        # 5. Slack (opzionale)
+        if self._notifier.enabled:
+            self._notifier.notify("Pre-flight OK — bot in avvio")
+        else:
+            logger.warning("Slack webhook non configurato — notifiche disabilitate")
+
+        logger.info("Pre-flight checks superati (balance=%.2f USDT)", balance)
+        return True
 
     def _wait_for_candle(self) -> None:
         """Attende la chiusura della prossima candela 5min."""
@@ -107,6 +199,9 @@ class TradingLoop:
 
     def _tick(self) -> None:
         """Esegue un singolo ciclo del bot."""
+        if self._check_kill_switch():
+            return
+
         self._check_daily_reset()
 
         # Fetch dati
