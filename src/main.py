@@ -247,7 +247,7 @@ class TradingLoop:
                 signal_filtered = self._strategy.generate_signal(df, sentiment=sentiment)
 
                 if signal_filtered is not None and self._risk.can_trade(
-                    capital=TRADE_AMOUNT_USDT * 100,  # placeholder capital
+                    capital=LIVE_CAPITAL_USDT,
                 ):
                     self._open_position(signal_filtered, row, sentiment, atr)
 
@@ -294,10 +294,27 @@ class TradingLoop:
             sentiment: Risultato sentiment corrente.
             atr: ATR corrente.
         """
+        # SHORT ignorato in live (spot only)
+        if self.mode == "live" and signal == "SHORT":
+            logger.info("SHORT ignorato in live mode (spot only)")
+            return
+
         entry_price = row["close"]
+
+        # Capitale: balance reale in live, simulato in paper
+        if self.mode == "live":
+            try:
+                capital = self._exchange.get_balance("USDT")
+            except Exception:
+                logger.exception("Errore fetch balance, skip apertura")
+                self._notifier.notify("Errore fetch balance — trade non aperto", level="error")
+                return
+        else:
+            capital = LIVE_CAPITAL_USDT
+
         levels = self._risk.calculate_levels(entry_price, signal, atr)
         size = self._risk.calculate_position_size(
-            capital=TRADE_AMOUNT_USDT * 100,
+            capital=capital,
             entry_price=entry_price,
             sl_price=levels["stop_loss"],
             sentiment=sentiment,
@@ -306,6 +323,24 @@ class TradingLoop:
         if size == 0.0:
             logger.info("Position size troppo piccola, skip trade")
             return
+
+        # Ordine live
+        if self.mode == "live":
+            amount_btc = size / entry_price
+            try:
+                order = self._exchange.create_order(
+                    symbol=SYMBOL,
+                    side="buy",
+                    amount=amount_btc,
+                )
+                logger.info("Ordine live eseguito: %s", order.get("id"))
+            except Exception:
+                logger.exception("Errore ordine live — posizione non aperta")
+                self._notifier.notify(
+                    "ERRORE ordine %s @ %.2f — non aperto" % (signal, entry_price),
+                    level="error",
+                )
+                return
 
         self._position = {
             "side": signal,
@@ -317,11 +352,12 @@ class TradingLoop:
             "size_usdt": size,
         }
 
-        logger.info(
-            "APERTA %s @ %.2f | SL=%.2f TP=%.2f Trail=%.2f | Size=%.2f USDT",
+        msg = "APERTA %s @ %.2f | SL=%.2f TP=%.2f Trail=%.2f | Size=%.2f USDT" % (
             signal, entry_price, levels["stop_loss"], levels["take_profit"],
             levels["trailing_stop"], size,
         )
+        logger.info(msg)
+        self._notifier.notify(msg)
 
     def _close_position(self, row, reason: str) -> None:
         """Chiude la posizione aperta.
@@ -337,6 +373,26 @@ class TradingLoop:
         exit_price = row["close"]
         entry_price = pos["entry_price"]
 
+        # Ordine live di chiusura
+        if self.mode == "live":
+            amount_btc = pos["size_usdt"] / entry_price
+            try:
+                order = self._exchange.create_order(
+                    symbol=SYMBOL,
+                    side="sell",
+                    amount=amount_btc,
+                )
+                logger.info("Ordine chiusura live eseguito: %s", order.get("id"))
+            except Exception:
+                logger.exception("Errore ordine chiusura live — posizione resta aperta")
+                self._notifier.notify(
+                    "ERRORE chiusura %s @ %.2f — posizione resta aperta" % (
+                        pos["side"], exit_price,
+                    ),
+                    level="error",
+                )
+                return  # NON cancella la posizione
+
         if pos["side"] == "LONG":
             pnl_pct = ((exit_price - entry_price) / entry_price) * 100.0
         else:
@@ -344,10 +400,11 @@ class TradingLoop:
 
         pnl = (pnl_pct / 100.0) * pos["size_usdt"]
 
-        logger.info(
-            "CHIUSA %s @ %.2f | Reason=%s | PnL=%.2f%% (%.2f USDT)",
+        msg = "CHIUSA %s @ %.2f | Reason=%s | PnL=%.2f%% (%.2f USDT)" % (
             pos["side"], exit_price, reason, pnl_pct, pnl,
         )
+        logger.info(msg)
+        self._notifier.notify(msg)
 
         self._risk.record_trade(pnl)
         self._daily_trades += 1
