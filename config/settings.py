@@ -26,6 +26,7 @@ VOLUME_MA_PERIOD: int = 20
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 SENTIMENT_MODEL: str = "claude-sonnet-4-20250514"
 SENTIMENT_THRESHOLD: float = 0.3  # Score minimo per conferma
+SENTIMENT_COOLDOWN_MIN: int = 15  # minuti minimo tra chiamate sentiment
 
 # --- Risk Management ---
 STOP_LOSS_PCT: float = 0.5   # 0.5%
