@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-03-31T20:45:05.539251+00:00",
+  "mode": "paper",
+  "position": null,
+  "daily": {
+    "trades": 0,
+    "pnl": 0.0,
+    "win_rate": 0.0
+  },
+  "last_signal": null,
+  "last_sentiment": null
+}
