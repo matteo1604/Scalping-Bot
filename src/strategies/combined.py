@@ -1,11 +1,17 @@
-"""Strategia combinata: RSI Mean Reversion + Bollinger Bands + ADX + Sentiment.
+"""Strategia combinata: RSI Mean Reversion + Bollinger Bands + ADX + Trend Following + Sentiment.
 
-Logica segnali:
-- FILTRO REGIME: ADX > adx_trend_threshold → nessun segnale (mercato in trend)
-- LONG  cond A: RSI <= rsi_entry_oversold (30) + Close <= bb_lower + Volume ok
-- LONG  cond B: RSI < rsi_extreme_oversold (20), basta da solo (+ Volume ok)
-- SHORT cond A: RSI >= rsi_entry_overbought (70) + Close >= bb_upper + Volume ok
-- SHORT cond B: RSI > rsi_extreme_overbought (80), basta da solo (+ Volume ok)
+Logica segnali — modalità selezionata automaticamente da ADX:
+
+MEAN REVERSION (ADX <= adx_trend_threshold):
+- LONG  cond A: RSI <= rsi_entry_oversold + Close <= bb_lower + Volume ok
+- LONG  cond B: RSI < rsi_extreme_oversold (basta da solo) + Volume ok
+- SHORT cond A: RSI >= rsi_entry_overbought + Close >= bb_upper + Volume ok
+- SHORT cond B: RSI > rsi_extreme_overbought (basta da solo) + Volume ok
+
+TREND FOLLOWING (ADX > adx_trend_threshold):
+- LONG : DI+ > DI- AND close > ema_slow AND RSI in [bull_min, bull_max] AND close > bb_middle + Volume ok
+- SHORT: DI- > DI+ AND close < ema_slow AND RSI in [bear_min, bear_max] AND close < bb_middle + Volume ok
+
 - Volume ok: volume >= volume_ma * volume_filter_ratio (default 0.8)
 - Il sentiment filtra il segnale: LONG bloccato se bearish, SHORT bloccato se bullish
 """
@@ -21,6 +27,10 @@ from config.settings import (
     RSI_EXTREME_OVERBOUGHT,
     RSI_EXTREME_OVERSOLD,
     SENTIMENT_THRESHOLD,
+    TREND_RSI_PULLBACK_BEAR_MAX,
+    TREND_RSI_PULLBACK_BEAR_MIN,
+    TREND_RSI_PULLBACK_BULL_MAX,
+    TREND_RSI_PULLBACK_BULL_MIN,
     VOLUME_FILTER_RATIO,
 )
 from src.sentiment.claude_sentiment import SentimentResult
@@ -61,6 +71,10 @@ class CombinedStrategy:
         volume_filter_ratio: float = VOLUME_FILTER_RATIO,
         sentiment_threshold: float = SENTIMENT_THRESHOLD,
         sentiment_min_confidence: float = 0.5,
+        trend_rsi_bull_min: float = TREND_RSI_PULLBACK_BULL_MIN,
+        trend_rsi_bull_max: float = TREND_RSI_PULLBACK_BULL_MAX,
+        trend_rsi_bear_min: float = TREND_RSI_PULLBACK_BEAR_MIN,
+        trend_rsi_bear_max: float = TREND_RSI_PULLBACK_BEAR_MAX,
     ) -> None:
         self.rsi_entry_oversold = rsi_entry_oversold
         self.rsi_entry_overbought = rsi_entry_overbought
@@ -70,6 +84,10 @@ class CombinedStrategy:
         self.volume_filter_ratio = volume_filter_ratio
         self.sentiment_threshold = sentiment_threshold
         self.sentiment_min_confidence = sentiment_min_confidence
+        self.trend_rsi_bull_min = trend_rsi_bull_min
+        self.trend_rsi_bull_max = trend_rsi_bull_max
+        self.trend_rsi_bear_min = trend_rsi_bear_min
+        self.trend_rsi_bear_max = trend_rsi_bear_max
 
     def generate_signal(
         self,
@@ -105,19 +123,10 @@ class CombinedStrategy:
             return None
 
         adx = row["adx"]
-        rsi = row["rsi"]
-        close = row["close"]
         volume = row["volume"]
         volume_ma = row["volume_ma"]
-        bb_upper = row["bb_upper"]
-        bb_lower = row["bb_lower"]
 
-        # Filtro regime: mercato in trend forte → no mean reversion
-        if adx > self.adx_trend_threshold:
-            logger.debug("Nessun segnale: mercato in trend (ADX=%.1f)", adx)
-            return None
-
-        # Filtro volume (rilassato: volume >= volume_ma * ratio)
+        # Filtro volume (comune a entrambe le modalità)
         volume_threshold = volume_ma * self.volume_filter_ratio
         if volume < volume_threshold:
             logger.debug(
@@ -126,41 +135,102 @@ class CombinedStrategy:
             )
             return None
 
-        # LONG: condizione A (moderata) o B (estrema)
+        # Branch sul regime di mercato
+        if adx > self.adx_trend_threshold:
+            signal = self._trend_following_signal(row)
+        else:
+            signal = self._mean_reversion_signal(row)
+
+        if signal is None:
+            return None
+
+        if not self._sentiment_allows(sentiment, signal):
+            logger.info(
+                "%s bloccato dal sentiment (score=%.2f)",
+                signal,
+                sentiment.sentiment_score,  # type: ignore[union-attr]
+            )
+            return None
+
+        return signal
+
+    def _mean_reversion_signal(self, row: pd.Series) -> str | None:
+        """Genera segnale mean reversion (ADX <= threshold).
+
+        Condizioni LONG:
+        - A: RSI <= rsi_entry_oversold AND close <= bb_lower
+        - B: RSI < rsi_extreme_oversold (basta da solo)
+
+        Condizioni SHORT:
+        - A: RSI >= rsi_entry_overbought AND close >= bb_upper
+        - B: RSI > rsi_extreme_overbought (basta da solo)
+        """
+        rsi = row["rsi"]
+        close = row["close"]
+        bb_upper = row["bb_upper"]
+        bb_lower = row["bb_lower"]
+
         long_cond_a = rsi <= self.rsi_entry_oversold and close <= bb_lower
         long_cond_b = rsi < self.rsi_extreme_oversold
         if long_cond_a or long_cond_b:
-            if not self._sentiment_allows(sentiment, "LONG"):
-                logger.info(
-                    "LONG bloccato dal sentiment (score=%.2f)",
-                    sentiment.sentiment_score,  # type: ignore[union-attr]
-                )
-                return None
             logger.info(
-                "Segnale LONG: RSI=%.1f, Close=%.2f, BB_lower=%.2f (cond_%s)",
+                "Segnale LONG (mean rev): RSI=%.1f, Close=%.2f, BB_lower=%.2f (cond_%s)",
                 rsi, close, bb_lower, "A" if long_cond_a else "B",
             )
             return "LONG"
 
-        # SHORT: condizione A (moderata) o B (estrema)
         short_cond_a = rsi >= self.rsi_entry_overbought and close >= bb_upper
         short_cond_b = rsi > self.rsi_extreme_overbought
         if short_cond_a or short_cond_b:
-            if not self._sentiment_allows(sentiment, "SHORT"):
-                logger.info(
-                    "SHORT bloccato dal sentiment (score=%.2f)",
-                    sentiment.sentiment_score,  # type: ignore[union-attr]
-                )
-                return None
             logger.info(
-                "Segnale SHORT: RSI=%.1f, Close=%.2f, BB_upper=%.2f (cond_%s)",
+                "Segnale SHORT (mean rev): RSI=%.1f, Close=%.2f, BB_upper=%.2f (cond_%s)",
                 rsi, close, bb_upper, "A" if short_cond_a else "B",
             )
             return "SHORT"
 
         logger.debug(
-            "No signal: RSI=%.1f, ADX=%.1f, close=%.1f, bb_lower=%.1f, bb_upper=%.1f, vol=%.1f/%.1f",
-            rsi, adx, close, bb_lower, bb_upper, volume, volume_ma,
+            "No signal (mean rev): RSI=%.1f, close=%.1f, bb_lower=%.1f, bb_upper=%.1f",
+            rsi, close, bb_lower, bb_upper,
+        )
+        return None
+
+    def _trend_following_signal(self, row: pd.Series) -> str | None:
+        """Genera segnale trend following (ADX > threshold).
+
+        LONG: DI+ > DI- AND close > ema_slow AND RSI in [bull_min, bull_max] AND close > bb_middle
+        SHORT: DI- > DI+ AND close < ema_slow AND RSI in [bear_min, bear_max] AND close < bb_middle
+        """
+        rsi = row["rsi"]
+        close = row["close"]
+        adx = row["adx"]
+        di_plus = row.get("di_plus")
+        di_minus = row.get("di_minus")
+        ema_slow = row.get("ema_slow")
+        bb_middle = row.get("bb_middle")
+
+        if pd.isna(di_plus) or pd.isna(di_minus) or pd.isna(ema_slow) or pd.isna(bb_middle):
+            logger.debug("Nessun segnale trend: DI+/DI-/ema_slow/bb_middle NaN")
+            return None
+
+        uptrend = di_plus > di_minus and close > ema_slow
+        if uptrend and self.trend_rsi_bull_min <= rsi <= self.trend_rsi_bull_max and close > bb_middle:
+            logger.info(
+                "Segnale LONG (trend): ADX=%.1f, DI+=%.1f, DI-=%.1f, RSI=%.1f",
+                adx, di_plus, di_minus, rsi,
+            )
+            return "LONG"
+
+        downtrend = di_minus > di_plus and close < ema_slow
+        if downtrend and self.trend_rsi_bear_min <= rsi <= self.trend_rsi_bear_max and close < bb_middle:
+            logger.info(
+                "Segnale SHORT (trend): ADX=%.1f, DI+=%.1f, DI-=%.1f, RSI=%.1f",
+                adx, di_plus, di_minus, rsi,
+            )
+            return "SHORT"
+
+        logger.debug(
+            "No signal (trend): ADX=%.1f, DI+=%.1f, DI-=%.1f, RSI=%.1f, close=%.1f, ema_slow=%.1f",
+            adx, di_plus, di_minus, rsi, close, ema_slow,
         )
         return None
 

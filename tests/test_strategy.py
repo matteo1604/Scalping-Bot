@@ -33,6 +33,9 @@ def _make_df(**overrides) -> pd.DataFrame:
         "bb_lower": 34500.0,
         "atr": 200.0,
         "adx": 15.0,
+        "di_plus": 20.0,
+        "di_minus": 20.0,
+        "ema_slow": 35000.0,
     }
     defaults.update(overrides)
     return pd.DataFrame([defaults], index=pd.to_datetime(["2026-01-01"]))
@@ -452,3 +455,148 @@ class TestCustomThresholds:
             adx=15.0,
         )
         assert strat.generate_signal(df) == "LONG"
+
+
+# ---------------------------------------------------------------------------
+# Trend following (ADX > threshold)
+# ---------------------------------------------------------------------------
+
+class TestTrendFollowing:
+    """Trend following: DI+/DI- + RSI pullback quando ADX > threshold."""
+
+    def test_long_in_uptrend_with_rsi_pullback(self, strategy):
+        """LONG in uptrend: DI+ > DI-, close > ema_slow, RSI 40-55, close > bb_middle."""
+        df = _make_df(
+            adx=35.0,          # sopra threshold → trend mode
+            di_plus=30.0,      # DI+ > DI- → uptrend
+            di_minus=15.0,
+            rsi=48.0,          # pullback zone 40-55
+            close=35100.0,     # close > ema_slow (35000) e > bb_middle (35000)
+            ema_slow=35000.0,
+            volume=150.0,
+            volume_ma=100.0,
+        )
+        assert strategy.generate_signal(df) == "LONG"
+
+    def test_no_long_in_uptrend_rsi_too_low(self, strategy):
+        """No LONG in uptrend se RSI < 40 (non è pullback, è ipervenduto)."""
+        df = _make_df(
+            adx=35.0,
+            di_plus=30.0,
+            di_minus=15.0,
+            rsi=35.0,          # sotto la pullback zone (40)
+            close=35100.0,
+            ema_slow=35000.0,
+            volume=150.0,
+            volume_ma=100.0,
+        )
+        assert strategy.generate_signal(df) is None
+
+    def test_no_long_in_uptrend_rsi_too_high(self, strategy):
+        """No LONG in uptrend se RSI > 55 (momentum già esaurito)."""
+        df = _make_df(
+            adx=35.0,
+            di_plus=30.0,
+            di_minus=15.0,
+            rsi=60.0,          # sopra la pullback zone (55)
+            close=35100.0,
+            ema_slow=35000.0,
+            volume=150.0,
+            volume_ma=100.0,
+        )
+        assert strategy.generate_signal(df) is None
+
+    def test_no_long_in_uptrend_close_below_ema_slow(self, strategy):
+        """No LONG in uptrend se close <= ema_slow (trend non confermato dal prezzo)."""
+        df = _make_df(
+            adx=35.0,
+            di_plus=30.0,
+            di_minus=15.0,
+            rsi=48.0,
+            close=34950.0,     # close < ema_slow (35000)
+            ema_slow=35000.0,
+            volume=150.0,
+            volume_ma=100.0,
+        )
+        assert strategy.generate_signal(df) is None
+
+    def test_no_long_when_di_minus_greater_than_di_plus(self, strategy):
+        """No LONG in trend mode se DI- > DI+ (downtrend)."""
+        df = _make_df(
+            adx=35.0,
+            di_plus=15.0,
+            di_minus=30.0,     # downtrend
+            rsi=48.0,
+            close=35100.0,
+            ema_slow=35000.0,
+            volume=150.0,
+            volume_ma=100.0,
+        )
+        assert strategy.generate_signal(df) is None
+
+    def test_short_in_downtrend_with_rsi_pullback(self, strategy):
+        """SHORT in downtrend: DI- > DI+, close < ema_slow, RSI 45-60, close < bb_middle."""
+        df = _make_df(
+            adx=35.0,          # sopra threshold → trend mode
+            di_plus=15.0,      # DI- > DI+ → downtrend
+            di_minus=30.0,
+            rsi=52.0,          # pullback zone 45-60
+            close=34900.0,     # close < ema_slow (35000) e < bb_middle (35000)
+            ema_slow=35000.0,
+            volume=150.0,
+            volume_ma=100.0,
+        )
+        assert strategy.generate_signal(df) == "SHORT"
+
+    def test_no_short_in_downtrend_rsi_too_high(self, strategy):
+        """No SHORT in downtrend se RSI > 60 (non è pullback)."""
+        df = _make_df(
+            adx=35.0,
+            di_plus=15.0,
+            di_minus=30.0,
+            rsi=65.0,          # sopra la pullback zone (60)
+            close=34900.0,
+            ema_slow=35000.0,
+            volume=150.0,
+            volume_ma=100.0,
+        )
+        assert strategy.generate_signal(df) is None
+
+    def test_no_short_in_downtrend_close_above_ema_slow(self, strategy):
+        """No SHORT in downtrend se close >= ema_slow."""
+        df = _make_df(
+            adx=35.0,
+            di_plus=15.0,
+            di_minus=30.0,
+            rsi=52.0,
+            close=35050.0,     # close > ema_slow (35000)
+            ema_slow=35000.0,
+            volume=150.0,
+            volume_ma=100.0,
+        )
+        assert strategy.generate_signal(df) is None
+
+    def test_trend_signal_blocked_by_volume(self, strategy):
+        """Trend following richiede volume ok come mean reversion."""
+        df = _make_df(
+            adx=35.0,
+            di_plus=30.0,
+            di_minus=15.0,
+            rsi=48.0,
+            close=35100.0,
+            ema_slow=35000.0,
+            volume=50.0,       # 50 < 100 * 0.8 = 80 → bloccato
+            volume_ma=100.0,
+        )
+        assert strategy.generate_signal(df) is None
+
+    def test_mean_reversion_unchanged_when_adx_low(self, strategy):
+        """Con ADX basso la mean reversion funziona come prima."""
+        df = _make_df(
+            adx=15.0,          # sotto threshold → mean reversion
+            rsi=20.0,
+            close=34490.0,     # <= bb_lower
+            volume=150.0,
+            volume_ma=100.0,
+        )
+        assert strategy.generate_signal(df) == "LONG"
