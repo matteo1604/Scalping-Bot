@@ -16,6 +16,8 @@ from config.settings import (
     ADX_TREND_THRESHOLD,
     BINANCE_API_KEY,
     BINANCE_API_SECRET,
+    HTF_CANDLES,
+    HTF_TIMEFRAME,
     KILL_SWITCH_PATH,
     LIVE_CAPITAL_USDT,
     LOG_LEVEL,
@@ -26,6 +28,7 @@ from config.settings import (
     TRADE_AMOUNT_USDT,
 )
 from src.exchange import BinanceExchange
+from src.indicators.htf_filter import HTFFilter
 from src.indicators.technical import add_indicators, add_prev_indicators
 from src.risk.manager import RiskManager
 from src.sentiment.claude_sentiment import ClaudeSentiment, SentimentResult
@@ -69,6 +72,10 @@ class TradingLoop:
         self._risk = RiskManager()
         self._status = StatusWriter(output_path=status_path)
         self._notifier = SlackNotifier(webhook_url=SLACK_WEBHOOK_URL)
+
+        # HTF filter
+        self._htf_filter = HTFFilter()
+        self._htf_data: dict = {"rsi_1h": None, "trend_1h": "NEUTRAL"}
 
         # Stato posizione
         self._position: dict | None = None
@@ -205,6 +212,14 @@ class TradingLoop:
 
         self._check_daily_reset()
 
+        # Fetch dati 1h per filtro multi-timeframe
+        try:
+            df_1h = self._exchange.fetch_ohlcv(SYMBOL, HTF_TIMEFRAME, limit=HTF_CANDLES)
+            self._htf_data = self._htf_filter.compute_indicators(df_1h)
+        except Exception:
+            logger.warning("Errore fetch 1h, HTF filter disabilitato per questo tick")
+            self._htf_data = {"rsi_1h": None, "trend_1h": "NEUTRAL"}
+
         # Fetch dati
         try:
             df = self._exchange.fetch_ohlcv(SYMBOL, TIMEFRAME, limit=100)
@@ -250,7 +265,14 @@ class TradingLoop:
                 if signal_filtered is not None and self._risk.can_trade(
                     capital=LIVE_CAPITAL_USDT,
                 ):
-                    self._open_position(signal_filtered, row, sentiment, atr)
+                    # Determina il tipo di strategia dal contesto
+                    strategy_mode = "trend" if row["adx"] > ADX_TREND_THRESHOLD else "reversion"
+
+                    # Filtro multi-timeframe
+                    if not self._htf_filter.allows_signal(signal_filtered, strategy_mode, self._htf_data):
+                        self._last_signal = None  # segnale bloccato da HTF
+                    else:
+                        self._open_position(signal_filtered, row, sentiment, atr)
 
         # Aggiorna status
         self._write_status(row)
@@ -482,6 +504,10 @@ class TradingLoop:
             },
             "last_signal": self._last_signal,
             "last_sentiment": sentiment_data,
+            "htf": {
+                "rsi_1h": self._htf_data.get("rsi_1h"),
+                "trend_1h": self._htf_data.get("trend_1h"),
+            },
         }
 
         try:
