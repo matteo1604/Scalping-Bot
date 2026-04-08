@@ -80,6 +80,68 @@ class TestAddIndicators:
         assert "rsi" in result.columns
 
 
+class TestAddIndicatorsNew:
+    """Test per i nuovi indicatori: BB, ATR, ADX."""
+
+    def test_adds_bb_columns(self, sample_ohlcv):
+        """Deve aggiungere colonne bb_upper, bb_middle, bb_lower."""
+        result = add_indicators(sample_ohlcv)
+        assert "bb_upper" in result.columns
+        assert "bb_middle" in result.columns
+        assert "bb_lower" in result.columns
+
+    def test_adds_atr_column(self, sample_ohlcv):
+        """Deve aggiungere colonna atr."""
+        result = add_indicators(sample_ohlcv)
+        assert "atr" in result.columns
+
+    def test_adds_adx_column(self, sample_ohlcv):
+        """Deve aggiungere colonna adx."""
+        result = add_indicators(sample_ohlcv)
+        assert "adx" in result.columns
+
+    def test_bb_upper_above_lower(self, sample_ohlcv):
+        """bb_upper deve essere sempre >= bb_lower (dove non NaN)."""
+        result = add_indicators(sample_ohlcv)
+        valid = result.dropna(subset=["bb_upper", "bb_lower"])
+        assert (valid["bb_upper"] >= valid["bb_lower"]).all()
+
+    def test_bb_middle_between_bands(self, sample_ohlcv):
+        """bb_middle deve essere tra bb_lower e bb_upper."""
+        result = add_indicators(sample_ohlcv)
+        valid = result.dropna(subset=["bb_upper", "bb_middle", "bb_lower"])
+        assert (valid["bb_middle"] >= valid["bb_lower"]).all()
+        assert (valid["bb_middle"] <= valid["bb_upper"]).all()
+
+    def test_atr_non_negative(self, sample_ohlcv):
+        """ATR deve essere >= 0."""
+        result = add_indicators(sample_ohlcv)
+        atr = result["atr"].dropna()
+        assert (atr >= 0).all()
+
+    def test_adx_bounded(self, sample_ohlcv):
+        """ADX deve essere tra 0 e 100."""
+        result = add_indicators(sample_ohlcv)
+        adx = result["adx"].dropna()
+        assert (adx >= 0).all()
+        assert (adx <= 100).all()
+
+    def test_custom_bb_period(self, sample_ohlcv):
+        """Deve accettare bb_period personalizzato."""
+        result = add_indicators(sample_ohlcv, bb_period=10)
+        assert "bb_upper" in result.columns
+
+    def test_custom_atr_period(self, sample_ohlcv):
+        """Deve accettare atr_period personalizzato."""
+        result = add_indicators(sample_ohlcv, atr_period=7)
+        assert "atr" in result.columns
+
+    def test_custom_adx_period(self, sample_ohlcv):
+        """Deve accettare adx_period personalizzato."""
+        result = add_indicators(sample_ohlcv, adx_period=7)
+        assert "adx" in result.columns
+
+
 class TestAddPrevIndicators:
     """Test per add_prev_indicators."""
 

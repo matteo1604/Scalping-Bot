@@ -22,6 +22,22 @@ RSI_OVERBOUGHT: float = 70.0
 RSI_OVERSOLD: float = 30.0
 VOLUME_MA_PERIOD: int = 20
 
+# Bollinger Bands
+BB_PERIOD: int = 20
+BB_STD: float = 2.0
+
+# ATR
+ATR_PERIOD: int = 14
+
+# ADX — filtro regime di mercato
+ADX_PERIOD: int = 14
+ADX_TREND_THRESHOLD: float = 25.0  # sopra questo = trend forte, no mean reversion
+
+# RSI soglie entry (più strette di RSI_OVERBOUGHT/RSI_OVERSOLD)
+RSI_ENTRY_OVERSOLD: float = 25.0    # soglia entry LONG
+RSI_ENTRY_OVERBOUGHT: float = 75.0  # soglia entry SHORT
+RSI_EXIT_NEUTRAL: float = 50.0      # target uscita per mean reversion
+
 # --- Sentiment ---
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 SENTIMENT_MODEL: str = "claude-sonnet-4-20250514"

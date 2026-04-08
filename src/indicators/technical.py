@@ -1,16 +1,28 @@
-"""Calcolo indicatori tecnici: EMA, RSI, Volume MA.
+"""Calcolo indicatori tecnici: EMA, RSI, Volume MA, Bollinger Bands, ATR, ADX.
 
 Responsabilità:
-- Calcolare EMA(9) e EMA(21) per crossover
-- Calcolare RSI(14) per filtro overbought/oversold
+- Calcolare EMA(9) e EMA(21) per compatibilità retroattiva
+- Calcolare RSI(14) per segnali mean reversion
 - Calcolare media mobile del volume (20 periodi)
+- Calcolare Bollinger Bands (20, 2.0) per segnali mean reversion
+- Calcolare ATR(14) per risk management dinamico
+- Calcolare ADX(14) per filtro regime di mercato
 - Restituire un DataFrame arricchito con tutti gli indicatori
 """
 
 import pandas as pd
 import ta
 
-from config.settings import EMA_FAST, EMA_SLOW, RSI_PERIOD, VOLUME_MA_PERIOD
+from config.settings import (
+    ADX_PERIOD,
+    ATR_PERIOD,
+    BB_PERIOD,
+    BB_STD,
+    EMA_FAST,
+    EMA_SLOW,
+    RSI_PERIOD,
+    VOLUME_MA_PERIOD,
+)
 
 
 def add_indicators(
@@ -19,10 +31,15 @@ def add_indicators(
     ema_slow_period: int = EMA_SLOW,
     rsi_period: int = RSI_PERIOD,
     volume_ma_period: int = VOLUME_MA_PERIOD,
+    bb_period: int = BB_PERIOD,
+    bb_std: float = BB_STD,
+    atr_period: int = ATR_PERIOD,
+    adx_period: int = ADX_PERIOD,
 ) -> pd.DataFrame:
     """Arricchisce un DataFrame OHLCV con indicatori tecnici.
 
-    Aggiunge: ema_fast, ema_slow, rsi, volume_ma.
+    Aggiunge: ema_fast, ema_slow, rsi, volume_ma, bb_upper, bb_middle,
+    bb_lower, atr, adx.
 
     Args:
         df: DataFrame con colonne [open, high, low, close, volume].
@@ -30,6 +47,10 @@ def add_indicators(
         ema_slow_period: Periodo EMA lenta (default: 21).
         rsi_period: Periodo RSI (default: 14).
         volume_ma_period: Periodo media mobile volume (default: 20).
+        bb_period: Periodo Bollinger Bands (default: 20).
+        bb_std: Deviazioni standard Bollinger Bands (default: 2.0).
+        atr_period: Periodo ATR (default: 14).
+        adx_period: Periodo ADX (default: 14).
 
     Returns:
         DataFrame originale con colonne indicatori aggiunte.
@@ -45,6 +66,22 @@ def add_indicators(
 
     # Volume MA
     result["volume_ma"] = result["volume"].rolling(window=volume_ma_period).mean()
+
+    # Bollinger Bands
+    bb = ta.volatility.BollingerBands(result["close"], window=bb_period, window_dev=bb_std)
+    result["bb_upper"] = bb.bollinger_hband()
+    result["bb_middle"] = bb.bollinger_mavg()
+    result["bb_lower"] = bb.bollinger_lband()
+
+    # ATR
+    result["atr"] = ta.volatility.average_true_range(
+        result["high"], result["low"], result["close"], window=atr_period
+    )
+
+    # ADX
+    result["adx"] = ta.trend.adx(
+        result["high"], result["low"], result["close"], window=adx_period
+    )
 
     return result
 
