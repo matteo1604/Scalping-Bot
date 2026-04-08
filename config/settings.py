@@ -73,6 +73,12 @@ MIN_ORDER_SIZE_USDT: float = 10.0     # ordine minimo Binance BTC/USDT
 BOT_MODE: str = os.getenv("BOT_MODE", "paper")
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
+# --- Higher Timeframe Filter (1h) ---
+HTF_TIMEFRAME: str = "1h"
+HTF_CANDLES: int = 50  # quante candele 1h scaricare (50 = ~2 giorni, abbastanza per EMA 21)
+HTF_RSI_OVERBOUGHT: float = 65.0  # RSI 1h sopra questo → blocca LONG mean reversion
+HTF_RSI_OVERSOLD: float = 35.0    # RSI 1h sotto questo → blocca SHORT mean reversion
+
 # --- Notifiche ---
 SLACK_WEBHOOK_URL: str = os.getenv("SLACK_WEBHOOK_URL", "")
 
