@@ -103,29 +103,40 @@ def main() -> None:
     print(f"  Close >= BB upper:                   {pct(close_at_upper)}")
     print(f"  Volume >= volume_ma * {VOLUME_FILTER_RATIO}:          {pct(volume_ok)}")
 
-    # Simula segnali su ogni candela
+    # Simula segnali su ogni candela, separati per modalita'
     strategy = CombinedStrategy()
-    n_long = n_short = n_none = 0
+    mr_long = mr_short = tf_long = tf_short = n_none = 0
 
     for i in range(1, n_valid):
         window = df.iloc[: i + 1]
+        row = window.iloc[-1]
         sig = strategy.generate_signal(window)
+        adx_val = row["adx"]
+        in_trend = adx_val > ADX_TREND_THRESHOLD
         if sig == "LONG":
-            n_long += 1
+            if in_trend:
+                tf_long += 1
+            else:
+                mr_long += 1
         elif sig == "SHORT":
-            n_short += 1
+            if in_trend:
+                tf_short += 1
+            else:
+                mr_short += 1
         else:
             n_none += 1
 
     total_evaluated = n_valid - 1
+    total_mr = mr_long + mr_short
+    total_tf = tf_long + tf_short
+    total_signals = total_mr + total_tf
+    segnali_per_giorno = total_signals / max(total_evaluated / 288, 1)
+
     print()
     print(f"Segnali su {total_evaluated} candele valutate:")
-    print(f"  LONG:  {n_long}")
-    print(f"  SHORT: {n_short}")
-    print(f"  None:  {n_none}")
-
-    total_signals = n_long + n_short
-    segnali_per_giorno = total_signals / max(total_evaluated / 288, 1)
+    print(f"  Mean Reversion (ADX <= {ADX_TREND_THRESHOLD}):  LONG={mr_long}  SHORT={mr_short}  tot={total_mr}")
+    print(f"  Trend Following (ADX > {ADX_TREND_THRESHOLD}):   LONG={tf_long}  SHORT={tf_short}  tot={total_tf}")
+    print(f"  Totale:  {total_signals}   None: {n_none}")
 
     print()
     if total_signals == 0:
