@@ -18,8 +18,8 @@ TRADE_AMOUNT_USDT: float = 10.0  # Capitale per trade (minimo per test)
 EMA_FAST: int = 9
 EMA_SLOW: int = 21
 RSI_PERIOD: int = 14
-RSI_OVERBOUGHT: float = 70.0
-RSI_OVERSOLD: float = 30.0
+RSI_OVERBOUGHT: float = 70.0   # legacy (non usato dalla strategia, mantenuto per retrocompat)
+RSI_OVERSOLD: float = 30.0     # legacy (non usato dalla strategia, mantenuto per retrocompat)
 VOLUME_MA_PERIOD: int = 20
 
 # Bollinger Bands
@@ -45,8 +45,8 @@ SENTIMENT_THRESHOLD: float = 0.3  # Score minimo per conferma
 SENTIMENT_COOLDOWN_MIN: int = 15  # minuti minimo tra chiamate sentiment
 
 # --- Risk Management ---
-STOP_LOSS_PCT: float = 0.5   # 0.5%
-TAKE_PROFIT_PCT: float = 1.0  # 1.0%
+STOP_LOSS_PCT: float = 0.5   # fallback SL% quando ATR non disponibile
+TAKE_PROFIT_PCT: float = 1.0  # fallback TP% quando ATR non disponibile
 MAX_DAILY_LOSS_PCT: float = 3.0
 MAX_DAILY_TRADES: int = 20
 RISK_PER_TRADE_PCT: float = 1.0       # % capitale rischiato per trade

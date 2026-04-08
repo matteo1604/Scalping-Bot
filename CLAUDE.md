@@ -11,16 +11,17 @@ Bot di trading automatico per scalping su criptovalute (Binance), progettato per
 - **Timeframe:** 5 minuti
 
 ## Strategia di Trading
-Approccio multi-indicatore combinato:
-1. **EMA Crossover** → direzione del trend (EMA 9 / EMA 21)
-2. **RSI** → filtro (evita overbought/oversold)
+Approccio mean reversion multi-indicatore:
+1. **ADX (14)** → filtro regime di mercato: se ADX > 25 (trend forte) → nessun segnale
+2. **RSI Mean Reversion + Bollinger Bands** → segnale primario (entrata su estremi)
 3. **Volume** → conferma (volume sopra la media = segnale valido)
 4. **Claude AI Sentiment** → filtro finale prima dell'esecuzione
 
 ### Logica dei Segnali
-- **LONG:** EMA9 incrocia sopra EMA21 + RSI < 70 + Volume sopra media + Sentiment positivo
-- **SHORT:** EMA9 incrocia sotto EMA21 + RSI > 30 + Volume sopra media + Sentiment negativo
+- **LONG:** ADX ≤ 25 + RSI ≤ 25 + Close ≤ BB_lower + Volume sopra media + Sentiment non fortemente bearish
+- **SHORT:** ADX ≤ 25 + RSI ≥ 75 + Close ≥ BB_upper + Volume sopra media + Sentiment non fortemente bullish
 - Il sentiment AI agisce come filtro e modificatore del position sizing, NON come segnale standalone
+- EMA 9/21 restano calcolati ma non usati dalla strategia (retrocompatibilità)
 
 ### Sentiment Engine (Claude API)
 Il bot interroga Claude API con web search abilitato prima di ogni trade rilevato dai segnali tecnici. La risposta attesa è un JSON strutturato:
