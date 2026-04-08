@@ -95,23 +95,45 @@ class TestADXRegimeFilter:
 # ---------------------------------------------------------------------------
 
 class TestLongSignal:
-    """Test per segnali LONG (RSI oversold + prezzo su BB lower)."""
+    """Test per segnali LONG."""
 
-    def test_long_signal_rsi_oversold_and_bb_lower(self, strategy):
-        """LONG quando RSI < 25 e close <= bb_lower e volume ok."""
+    def test_long_rsi_moderate_with_bb(self, strategy):
+        """LONG (cond A): RSI < 30 AND close <= bb_lower."""
         df = _make_df(
-            rsi=20.0,
-            close=34490.0,  # <= bb_lower
+            rsi=28.0,
+            close=34490.0,  # <= bb_lower (34500)
             volume=150.0,
             volume_ma=100.0,
             adx=15.0,
         )
         assert strategy.generate_signal(df) == "LONG"
 
-    def test_long_on_rsi_exactly_at_oversold_threshold(self, strategy):
-        """LONG quando RSI == RSI_ENTRY_OVERSOLD (25)."""
+    def test_long_rsi_extreme_without_bb(self, strategy):
+        """LONG (cond B): RSI < 20 basta da solo, anche se close > bb_lower."""
         df = _make_df(
-            rsi=25.0,
+            rsi=18.0,
+            close=34600.0,  # sopra bb_lower=34500 — non importa
+            volume=150.0,
+            volume_ma=100.0,
+            adx=15.0,
+        )
+        assert strategy.generate_signal(df) == "LONG"
+
+    def test_long_rsi_moderate_without_bb_gives_no_signal(self, strategy):
+        """RSI < 30 ma close > bb_lower non basta (serve BB oppure RSI estremo)."""
+        df = _make_df(
+            rsi=28.0,
+            close=34600.0,  # sopra bb_lower — condizione A non soddisfatta
+            volume=150.0,
+            volume_ma=100.0,
+            adx=15.0,
+        )
+        assert strategy.generate_signal(df) is None
+
+    def test_long_rsi_at_new_oversold_threshold(self, strategy):
+        """LONG quando RSI == RSI_ENTRY_OVERSOLD (30) con close <= bb_lower."""
+        df = _make_df(
+            rsi=30.0,
             close=34490.0,
             volume=150.0,
             volume_ma=100.0,
@@ -119,34 +141,45 @@ class TestLongSignal:
         )
         assert strategy.generate_signal(df) == "LONG"
 
-    def test_no_long_when_rsi_not_oversold(self, strategy):
-        """Nessun LONG se RSI > RSI_ENTRY_OVERSOLD (25)."""
+    def test_no_long_when_rsi_above_oversold_and_no_bb(self, strategy):
+        """Nessun LONG se RSI >= 30 e close non è sul BB lower."""
         df = _make_df(
             rsi=35.0,
-            close=34490.0,
+            close=34600.0,
             volume=150.0,
             volume_ma=100.0,
             adx=15.0,
         )
         assert strategy.generate_signal(df) is None
 
-    def test_no_long_when_close_above_bb_lower(self, strategy):
-        """Nessun LONG se close > bb_lower (prezzo non tocca la banda)."""
+    def test_no_long_when_close_above_bb_lower_and_rsi_not_extreme(self, strategy):
+        """Nessun LONG se close > bb_lower e RSI non è estremo (>= 20)."""
         df = _make_df(
             rsi=20.0,
-            close=34600.0,  # sopra bb_lower=34500
+            close=34600.0,  # sopra bb_lower=34500; RSI=20 non è < 20
             volume=150.0,
             volume_ma=100.0,
             adx=15.0,
         )
         assert strategy.generate_signal(df) is None
 
-    def test_no_long_when_volume_low(self, strategy):
-        """Nessun LONG se volume < volume_ma."""
+    def test_long_volume_slightly_below_ma(self, strategy):
+        """LONG se volume >= volume_ma * 0.8 (filtro volume rilassato)."""
         df = _make_df(
-            rsi=20.0,
+            rsi=28.0,
             close=34490.0,
-            volume=80.0,
+            volume=95.0,      # 95 >= 100 * 0.8 = 80
+            volume_ma=100.0,
+            adx=15.0,
+        )
+        assert strategy.generate_signal(df) == "LONG"
+
+    def test_no_long_when_volume_way_below_ma(self, strategy):
+        """Nessun LONG se volume < volume_ma * 0.8."""
+        df = _make_df(
+            rsi=28.0,
+            close=34490.0,
+            volume=70.0,      # 70 < 100 * 0.8 = 80
             volume_ma=100.0,
             adx=15.0,
         )
@@ -158,23 +191,45 @@ class TestLongSignal:
 # ---------------------------------------------------------------------------
 
 class TestShortSignal:
-    """Test per segnali SHORT (RSI overbought + prezzo su BB upper)."""
+    """Test per segnali SHORT."""
 
-    def test_short_signal_rsi_overbought_and_bb_upper(self, strategy):
-        """SHORT quando RSI > 75 e close >= bb_upper e volume ok."""
+    def test_short_rsi_moderate_with_bb(self, strategy):
+        """SHORT (cond A): RSI >= 70 AND close >= bb_upper."""
         df = _make_df(
-            rsi=80.0,
-            close=35510.0,  # >= bb_upper
+            rsi=72.0,
+            close=35510.0,  # >= bb_upper (35500)
             volume=150.0,
             volume_ma=100.0,
             adx=15.0,
         )
         assert strategy.generate_signal(df) == "SHORT"
 
-    def test_short_on_rsi_exactly_at_overbought_threshold(self, strategy):
-        """SHORT quando RSI == RSI_ENTRY_OVERBOUGHT (75)."""
+    def test_short_rsi_extreme_without_bb(self, strategy):
+        """SHORT (cond B): RSI > 80 basta da solo, anche se close < bb_upper."""
         df = _make_df(
-            rsi=75.0,
+            rsi=82.0,
+            close=35400.0,  # sotto bb_upper=35500 — non importa
+            volume=150.0,
+            volume_ma=100.0,
+            adx=15.0,
+        )
+        assert strategy.generate_signal(df) == "SHORT"
+
+    def test_short_rsi_moderate_without_bb_gives_no_signal(self, strategy):
+        """RSI >= 70 ma close < bb_upper non basta."""
+        df = _make_df(
+            rsi=72.0,
+            close=35400.0,  # sotto bb_upper — condizione A non soddisfatta
+            volume=150.0,
+            volume_ma=100.0,
+            adx=15.0,
+        )
+        assert strategy.generate_signal(df) is None
+
+    def test_short_rsi_at_new_overbought_threshold(self, strategy):
+        """SHORT quando RSI == RSI_ENTRY_OVERBOUGHT (70) con close >= bb_upper."""
+        df = _make_df(
+            rsi=70.0,
             close=35510.0,
             volume=150.0,
             volume_ma=100.0,
@@ -182,34 +237,45 @@ class TestShortSignal:
         )
         assert strategy.generate_signal(df) == "SHORT"
 
-    def test_no_short_when_rsi_not_overbought(self, strategy):
-        """Nessun SHORT se RSI < RSI_ENTRY_OVERBOUGHT (75)."""
+    def test_no_short_when_rsi_below_overbought_and_no_bb(self, strategy):
+        """Nessun SHORT se RSI < 70 e close non è sul BB upper."""
         df = _make_df(
             rsi=65.0,
-            close=35510.0,
+            close=35400.0,
             volume=150.0,
             volume_ma=100.0,
             adx=15.0,
         )
         assert strategy.generate_signal(df) is None
 
-    def test_no_short_when_close_below_bb_upper(self, strategy):
-        """Nessun SHORT se close < bb_upper."""
+    def test_no_short_when_close_below_bb_upper_and_rsi_not_extreme(self, strategy):
+        """Nessun SHORT se close < bb_upper e RSI non è estremo (<= 80)."""
         df = _make_df(
             rsi=80.0,
-            close=35400.0,  # sotto bb_upper=35500
+            close=35400.0,  # sotto bb_upper; RSI=80 non è > 80
             volume=150.0,
             volume_ma=100.0,
             adx=15.0,
         )
         assert strategy.generate_signal(df) is None
 
-    def test_no_short_when_volume_low(self, strategy):
-        """Nessun SHORT se volume < volume_ma."""
+    def test_short_volume_slightly_below_ma(self, strategy):
+        """SHORT se volume >= volume_ma * 0.8 (filtro volume rilassato)."""
         df = _make_df(
-            rsi=80.0,
+            rsi=72.0,
             close=35510.0,
-            volume=80.0,
+            volume=95.0,      # 95 >= 100 * 0.8 = 80
+            volume_ma=100.0,
+            adx=15.0,
+        )
+        assert strategy.generate_signal(df) == "SHORT"
+
+    def test_no_short_when_volume_way_below_ma(self, strategy):
+        """Nessun SHORT se volume < volume_ma * 0.8."""
+        df = _make_df(
+            rsi=72.0,
+            close=35510.0,
+            volume=70.0,      # 70 < 100 * 0.8 = 80
             volume_ma=100.0,
             adx=15.0,
         )
@@ -328,10 +394,10 @@ class TestCustomThresholds:
     """La strategia deve rispettare i parametri personalizzati."""
 
     def test_custom_rsi_entry_oversold(self):
-        """Parametro rsi_entry_oversold personalizzato."""
-        strat = CombinedStrategy(rsi_entry_oversold=30.0)
+        """Parametro rsi_entry_oversold personalizzato (cond A più stretta)."""
+        strat = CombinedStrategy(rsi_entry_oversold=25.0)  # più restrittivo del default 30
         df = _make_df(
-            rsi=28.0,
+            rsi=23.0,
             close=34490.0,
             volume=150.0,
             volume_ma=100.0,
@@ -340,10 +406,10 @@ class TestCustomThresholds:
         assert strat.generate_signal(df) == "LONG"
 
     def test_custom_rsi_entry_overbought(self):
-        """Parametro rsi_entry_overbought personalizzato."""
-        strat = CombinedStrategy(rsi_entry_overbought=70.0)
+        """Parametro rsi_entry_overbought personalizzato (cond A più stretta)."""
+        strat = CombinedStrategy(rsi_entry_overbought=75.0)  # più restrittivo del default 70
         df = _make_df(
-            rsi=72.0,
+            rsi=77.0,
             close=35510.0,
             volume=150.0,
             volume_ma=100.0,
@@ -360,5 +426,29 @@ class TestCustomThresholds:
             volume=150.0,
             volume_ma=100.0,
             adx=30.0,  # sarebbe bloccato con threshold=25, ma non con 35
+        )
+        assert strat.generate_signal(df) == "LONG"
+
+    def test_custom_volume_filter_ratio(self):
+        """Parametro volume_filter_ratio personalizzato (più restrittivo)."""
+        strat = CombinedStrategy(volume_filter_ratio=1.0)  # richiede volume >= volume_ma
+        df = _make_df(
+            rsi=28.0,
+            close=34490.0,
+            volume=95.0,      # 95 < 100 * 1.0 = 100 → bloccato
+            volume_ma=100.0,
+            adx=15.0,
+        )
+        assert strat.generate_signal(df) is None
+
+    def test_custom_rsi_extreme_oversold(self):
+        """Parametro rsi_extreme_oversold personalizzato."""
+        strat = CombinedStrategy(rsi_extreme_oversold=25.0)  # soglia estrema più alta
+        df = _make_df(
+            rsi=23.0,
+            close=34600.0,  # sopra bb_lower — serve cond B
+            volume=150.0,
+            volume_ma=100.0,
+            adx=15.0,
         )
         assert strat.generate_signal(df) == "LONG"

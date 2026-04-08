@@ -33,10 +33,17 @@ ATR_PERIOD: int = 14
 ADX_PERIOD: int = 14
 ADX_TREND_THRESHOLD: float = 25.0  # sopra questo = trend forte, no mean reversion
 
-# RSI soglie entry (più strette di RSI_OVERBOUGHT/RSI_OVERSOLD)
-RSI_ENTRY_OVERSOLD: float = 25.0    # soglia entry LONG
-RSI_ENTRY_OVERBOUGHT: float = 75.0  # soglia entry SHORT
+# RSI soglie entry — condizione A (RSI moderato + BB)
+RSI_ENTRY_OVERSOLD: float = 30.0    # soglia entry LONG via cond A (era 25)
+RSI_ENTRY_OVERBOUGHT: float = 70.0  # soglia entry SHORT via cond A (era 75)
 RSI_EXIT_NEUTRAL: float = 50.0      # target uscita per mean reversion
+
+# RSI soglie extreme — condizione B (RSI estremo, senza BB)
+RSI_EXTREME_OVERSOLD: float = 20.0   # LONG senza BB se RSI < questa soglia
+RSI_EXTREME_OVERBOUGHT: float = 80.0 # SHORT senza BB se RSI > questa soglia
+
+# Volume filter ratio — volume >= volume_ma * ratio
+VOLUME_FILTER_RATIO: float = 0.8    # rilassato del 20% rispetto alla MA
 
 # --- Sentiment ---
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
