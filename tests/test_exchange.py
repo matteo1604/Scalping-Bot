@@ -64,6 +64,23 @@ class TestFetchOHLCV:
 
         assert isinstance(df.index, pd.DatetimeIndex)
 
+    @patch("src.exchange.ccxt.binance")
+    def test_fetch_ohlcv_accepts_1h_timeframe(self, mock_binance_cls):
+        """fetch_ohlcv deve accettare timeframe='1h' senza errori."""
+        mock_instance = MagicMock()
+        mock_binance_cls.return_value = mock_instance
+        mock_instance.fetch_ohlcv.return_value = [
+            [1700000000000, 35000.0, 35100.0, 34900.0, 35050.0, 100.5],
+            [1700003600000, 35050.0, 35200.0, 35000.0, 35150.0, 120.3],
+        ]
+
+        exchange = BinanceExchange(api_key="test", api_secret="secret")
+        df = exchange.fetch_ohlcv(symbol="BTC/USDT", timeframe="1h", limit=50)
+
+        mock_instance.fetch_ohlcv.assert_called_once_with("BTC/USDT", "1h", limit=50)
+        assert isinstance(df, pd.DataFrame)
+        assert len(df) == 2
+
 
 class TestGetBalance:
     """Test per il recupero del balance."""
