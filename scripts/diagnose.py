@@ -17,9 +17,11 @@ import ccxt
 import pandas as pd
 
 from src.indicators.technical import add_indicators, add_prev_indicators
+from src.indicators.htf_filter import HTFFilter
 from src.strategies.combined import CombinedStrategy
 from config.settings import (
     ADX_TREND_THRESHOLD,
+    HTF_CANDLES,
     RSI_ENTRY_OVERSOLD,
     RSI_ENTRY_OVERBOUGHT,
     RSI_EXTREME_OVERSOLD,
@@ -29,6 +31,7 @@ from config.settings import (
 
 SYMBOL = "BTC/USDT"
 TIMEFRAME = "5m"
+HTF_TIMEFRAME = "1h"
 N_CANDLES = 500
 
 
@@ -51,6 +54,18 @@ def main() -> None:
     except Exception as e:
         print(f"ERRORE fetch dati: {e}")
         sys.exit(1)
+
+    print(f"Fetch {HTF_CANDLES} candele {SYMBOL} {HTF_TIMEFRAME} per HTF filter...")
+    try:
+        df_1h = fetch_ohlcv(SYMBOL, HTF_TIMEFRAME, HTF_CANDLES)
+        htf_filter = HTFFilter()
+        htf_data = htf_filter.compute_indicators(df_1h)
+        rsi_str = f"{htf_data['rsi_1h']:.1f}" if htf_data["rsi_1h"] is not None else "N/A"
+        print(f"HTF 1h: RSI={rsi_str}, trend={htf_data['trend_1h']}")
+    except Exception as e:
+        print(f"ATTENZIONE: Fetch 1h fallito ({e}) — HTF filter disabilitato")
+        htf_filter = HTFFilter()
+        htf_data = {"rsi_1h": None, "trend_1h": "NEUTRAL"}
 
     print(f"Candele scaricate: {len(raw_df)}")
 
@@ -106,6 +121,7 @@ def main() -> None:
     # Simula segnali su ogni candela, separati per modalita'
     strategy = CombinedStrategy()
     mr_long = mr_short = tf_long = tf_short = n_none = 0
+    htf_blocked = 0
 
     for i in range(1, n_valid):
         window = df.iloc[: i + 1]
@@ -126,32 +142,48 @@ def main() -> None:
         else:
             n_none += 1
 
+        # Verifica filtro HTF
+        if sig is not None:
+            strategy_mode = "trend" if in_trend else "reversion"
+            if not htf_filter.allows_signal(sig, strategy_mode, htf_data):
+                htf_blocked += 1
+
     total_evaluated = n_valid - 1
     total_mr = mr_long + mr_short
     total_tf = tf_long + tf_short
     total_signals = total_mr + total_tf
+    total_after_htf = total_signals - htf_blocked
     segnali_per_giorno = total_signals / max(total_evaluated / 288, 1)
+    segnali_per_giorno_htf = total_after_htf / max(total_evaluated / 288, 1)
 
     print()
     print(f"Segnali su {total_evaluated} candele valutate:")
     print(f"  Mean Reversion (ADX <= {ADX_TREND_THRESHOLD}):  LONG={mr_long}  SHORT={mr_short}  tot={total_mr}")
     print(f"  Trend Following (ADX > {ADX_TREND_THRESHOLD}):   LONG={tf_long}  SHORT={tf_short}  tot={total_tf}")
-    print(f"  Totale:  {total_signals}   None: {n_none}")
+    print(f"  Totale pre-HTF:  {total_signals}   None: {n_none}")
 
     print()
-    if total_signals == 0:
+    if total_signals > 0:
+        htf_pct = htf_blocked / total_signals * 100
+        print(f"Filtro HTF 1h:")
+        print(f"  Segnali pre-HTF:         {total_signals} (~{segnali_per_giorno:.1f}/giorno)")
+        print(f"  Segnali bloccati da HTF: {htf_blocked} ({htf_pct:.0f}%)")
+        print(f"  Segnali finali:          {total_after_htf} (~{segnali_per_giorno_htf:.1f}/giorno)")
+
+    print()
+    if total_after_htf == 0:
         print("!! SEGNALI = 0 -- IL BOT NON FARA' TRADE.")
         print("   Verifica i filtri sopra: quale percentuale e' troppo bassa?")
         print("   ADX basso + RSI estremo + BB + volume devono coincidere.")
-    elif total_signals < 5:
-        print(f"[SCARSI] {total_signals} segnali (~{segnali_per_giorno:.1f}/giorno). "
+    elif total_after_htf < 5:
+        print(f"[SCARSI] {total_after_htf} segnali (~{segnali_per_giorno_htf:.1f}/giorno). "
               f"Valuta di rilassare le soglie.")
-    elif total_signals > 50:
-        print(f"[TROPPI] {total_signals} segnali (~{segnali_per_giorno:.1f}/giorno). "
+    elif total_after_htf > 50:
+        print(f"[TROPPI] {total_after_htf} segnali (~{segnali_per_giorno_htf:.1f}/giorno). "
               f"Valuta di stringere le soglie.")
     else:
-        print(f"[OK] {total_signals} segnali su {total_evaluated} candele "
-              f"(~{segnali_per_giorno:.1f}/giorno) -- PRONTI PER PAPER TRADING")
+        print(f"[OK] {total_after_htf} segnali su {total_evaluated} candele "
+              f"(~{segnali_per_giorno_htf:.1f}/giorno) -- PRONTI PER PAPER TRADING")
 
 
 if __name__ == "__main__":
