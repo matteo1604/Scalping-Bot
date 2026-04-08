@@ -13,6 +13,7 @@ import time
 from datetime import date, datetime, timezone
 
 from config.settings import (
+    ADX_TREND_THRESHOLD,
     BINANCE_API_KEY,
     BINANCE_API_SECRET,
     KILL_SWITCH_PATH,
@@ -301,6 +302,14 @@ class TradingLoop:
 
         entry_price = row["close"]
 
+        # Modalità strategia: trend following usa ATR moltiplicatore più ampio
+        try:
+            adx_val = float(row["adx"])
+        except (KeyError, TypeError, ValueError):
+            adx_val = 0.0
+        strategy_type = "trend" if adx_val > ADX_TREND_THRESHOLD else "mean_reversion"
+        effective_atr = atr * 1.5 if strategy_type == "trend" else atr
+
         # Capitale: balance reale in live, simulato in paper
         if self.mode == "live":
             try:
@@ -312,7 +321,7 @@ class TradingLoop:
         else:
             capital = LIVE_CAPITAL_USDT
 
-        levels = self._risk.calculate_levels(entry_price, signal, atr)
+        levels = self._risk.calculate_levels(entry_price, signal, effective_atr)
         size = self._risk.calculate_position_size(
             capital=capital,
             entry_price=entry_price,
@@ -344,6 +353,7 @@ class TradingLoop:
 
         self._position = {
             "side": signal,
+            "strategy": strategy_type,
             "entry_price": entry_price,
             "entry_time": str(row.name),
             "stop_loss": levels["stop_loss"],
