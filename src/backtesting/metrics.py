@@ -83,3 +83,74 @@ def sharpe_ratio(trades: list[dict], annualization: float = 252.0) -> float:
     if std_r == 0:
         return float("inf") if mean_r > 0 else 0.0
     return float((mean_r / std_r) * np.sqrt(annualization))
+
+
+def avg_trade_duration(trades: list[dict]) -> float:
+    """Durata media dei trade in numero di candele.
+
+    Args:
+        trades: Lista di trade con chiave "duration_candles".
+
+    Returns:
+        Durata media in candele. 0.0 se nessun trade.
+    """
+    if not trades:
+        return 0.0
+    return float(np.mean([t["duration_candles"] for t in trades]))
+
+
+def max_consecutive_losses(trades: list[dict]) -> int:
+    """Massimo numero di perdite consecutive.
+
+    Args:
+        trades: Lista di trade con chiave "pnl".
+
+    Returns:
+        Massimo numero di trade in perdita consecutivi.
+    """
+    if not trades:
+        return 0
+    max_streak = 0
+    current_streak = 0
+    for t in trades:
+        if t["pnl"] < 0:
+            current_streak += 1
+            max_streak = max(max_streak, current_streak)
+        else:
+            current_streak = 0
+    return max_streak
+
+
+def net_pnl(trades: list[dict]) -> float:
+    """PnL netto totale (già netto di commissioni dal backtester).
+
+    Args:
+        trades: Lista di trade con chiave "pnl".
+
+    Returns:
+        Somma di tutti i PnL.
+    """
+    if not trades:
+        return 0.0
+    return float(sum(t["pnl"] for t in trades))
+
+
+def calmar_ratio(trades: list[dict], initial_capital: float = 1000.0) -> float:
+    """Return totale percentuale / max drawdown percentuale.
+
+    Args:
+        trades: Lista di trade con chiave "pnl".
+        initial_capital: Capitale iniziale.
+
+    Returns:
+        Calmar ratio. inf se max_drawdown == 0 e return > 0. 0.0 se nessun trade.
+    """
+    if not trades:
+        return 0.0
+    total_return_pct = (net_pnl(trades) / initial_capital) * 100.0
+    if total_return_pct <= 0:
+        return 0.0
+    dd = max_drawdown(trades, initial_capital=initial_capital)
+    if dd == 0.0:
+        return float("inf")
+    return total_return_pct / dd
