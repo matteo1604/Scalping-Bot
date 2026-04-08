@@ -221,8 +221,8 @@ class TradingLoop:
 
         row = df.iloc[-1]
 
-        # ATR semplificato: high - low dell'ultima candela
-        atr = row["high"] - row["low"]
+        # ATR da indicatore (ATR 14-period calcolato da add_indicators)
+        atr = row["atr"]
 
         # Check posizione aperta
         if self._position is not None:
