@@ -142,6 +142,42 @@ class TestAddIndicatorsNew:
         assert "adx" in result.columns
 
 
+class TestDirectionalIndicators:
+    """Test per DI+ e DI- (indicatori direzionali per trend following)."""
+
+    def test_adds_di_plus_column(self, sample_ohlcv):
+        """Deve aggiungere colonna di_plus."""
+        result = add_indicators(sample_ohlcv)
+        assert "di_plus" in result.columns
+
+    def test_adds_di_minus_column(self, sample_ohlcv):
+        """Deve aggiungere colonna di_minus."""
+        result = add_indicators(sample_ohlcv)
+        assert "di_minus" in result.columns
+
+    def test_di_plus_bounded(self, sample_ohlcv):
+        """DI+ deve essere tra 0 e 100."""
+        result = add_indicators(sample_ohlcv)
+        di = result["di_plus"].dropna()
+        assert len(di) > 0
+        assert (di >= 0).all()
+        assert (di <= 100).all()
+
+    def test_di_minus_bounded(self, sample_ohlcv):
+        """DI- deve essere tra 0 e 100."""
+        result = add_indicators(sample_ohlcv)
+        di = result["di_minus"].dropna()
+        assert len(di) > 0
+        assert (di >= 0).all()
+        assert (di <= 100).all()
+
+    def test_di_not_all_nan(self, sample_ohlcv):
+        """DI+ e DI- non devono essere tutti NaN."""
+        result = add_indicators(sample_ohlcv)
+        assert result["di_plus"].notna().any()
+        assert result["di_minus"].notna().any()
+
+
 class TestAddPrevIndicators:
     """Test per add_prev_indicators."""
 

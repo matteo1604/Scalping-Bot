@@ -1,4 +1,4 @@
-"""Calcolo indicatori tecnici: EMA, RSI, Volume MA, Bollinger Bands, ATR, ADX.
+"""Calcolo indicatori tecnici: EMA, RSI, Volume MA, Bollinger Bands, ATR, ADX, DI+/DI-.
 
 Responsabilità:
 - Calcolare EMA(9) e EMA(21) per compatibilità retroattiva
@@ -7,6 +7,7 @@ Responsabilità:
 - Calcolare Bollinger Bands (20, 2.0) per segnali mean reversion
 - Calcolare ATR(14) per risk management dinamico
 - Calcolare ADX(14) per filtro regime di mercato
+- Calcolare DI+(14) e DI-(14) per direzione del trend
 - Restituire un DataFrame arricchito con tutti gli indicatori
 """
 
@@ -39,7 +40,7 @@ def add_indicators(
     """Arricchisce un DataFrame OHLCV con indicatori tecnici.
 
     Aggiunge: ema_fast, ema_slow, rsi, volume_ma, bb_upper, bb_middle,
-    bb_lower, atr, adx.
+    bb_lower, atr, adx, di_plus, di_minus.
 
     Args:
         df: DataFrame con colonne [open, high, low, close, volume].
@@ -80,6 +81,14 @@ def add_indicators(
 
     # ADX
     result["adx"] = ta.trend.adx(
+        result["high"], result["low"], result["close"], window=adx_period
+    )
+
+    # DI+ / DI- — indicatori direzionali per trend following
+    result["di_plus"] = ta.trend.adx_pos(
+        result["high"], result["low"], result["close"], window=adx_period
+    )
+    result["di_minus"] = ta.trend.adx_neg(
         result["high"], result["low"], result["close"], window=adx_period
     )
 
