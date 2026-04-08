@@ -45,6 +45,12 @@ RSI_EXTREME_OVERBOUGHT: float = 78.0 # era 80 — lieve rilassamento
 # Volume filter ratio — volume >= volume_ma * ratio
 VOLUME_FILTER_RATIO: float = 0.8    # rilassato del 20% rispetto alla MA
 
+# Trend following — RSI pullback zones (usate quando ADX > ADX_TREND_THRESHOLD)
+TREND_RSI_PULLBACK_BULL_MIN: float = 40.0  # RSI min per pullback long in uptrend
+TREND_RSI_PULLBACK_BULL_MAX: float = 55.0  # RSI max per pullback long in uptrend
+TREND_RSI_PULLBACK_BEAR_MIN: float = 45.0  # RSI min per pullback short in downtrend
+TREND_RSI_PULLBACK_BEAR_MAX: float = 60.0  # RSI max per pullback short in downtrend
+
 # --- Sentiment ---
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 SENTIMENT_MODEL: str = "claude-sonnet-4-20250514"

@@ -12,7 +12,18 @@
       "mcp__plugin_context7_context7__resolve-library-id",
       "mcp__plugin_context7_context7__query-docs",
       "Bash(git checkout:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(pytest tests/ -v)",
+      "Bash(pytest tests/test_indicators.py::TestAddIndicatorsNew -v)",
+      "Bash(pytest tests/test_indicators.py -v)",
+      "Bash(pytest tests/test_strategy.py -v)",
+      "Bash(xargs ls:*)",
+      "Bash(pytest tests/test_backtester.py tests/test_metrics.py -v)",
+      "Bash(pytest tests/test_backtester.py -v)",
+      "Bash(pytest tests/ -q)",
+      "Bash(pytest tests/ -v --ignore=tests/test_exchange_integration.py)",
+      "Bash(pytest tests/ -q --ignore=tests/test_exchange_integration.py)"
     ]
   }
 }
