@@ -37,6 +37,15 @@ Entrata su pullback nella direzione del trend rilevata da DI+/DI-:
 - Il sentiment AI agisce come filtro e modificatore del position sizing, NON come segnale standalone
 - EMA 9/21 restano calcolati; EMA_slow (21) è usata come riferimento trend in modalità 2
 
+### Filtro Multi-Timeframe (1h)
+Il timeframe 1h agisce come semaforo sui segnali del 5min:
+- Mean reversion LONG bloccato se RSI 1h ≥ 65 (overbought macro)
+- Mean reversion SHORT bloccato se RSI 1h ≤ 35 (oversold macro)
+- Trend following LONG permesso solo se trend 1h = UP o NEUTRAL
+- Trend following SHORT permesso solo se trend 1h = DOWN o NEUTRAL
+- Se il fetch 1h fallisce, il filtro è disattivato (fail-open)
+- Ordine filtri: sentiment → HTF → apertura posizione
+
 ### Sentiment Engine (Claude API)
 Il bot interroga Claude API con web search abilitato prima di ogni trade rilevato dai segnali tecnici. La risposta attesa è un JSON strutturato:
 ```json
