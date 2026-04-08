@@ -1,16 +1,22 @@
-"""Strategia combinata: EMA Crossover + RSI + Volume + Sentiment.
+"""Strategia combinata: RSI Mean Reversion + Bollinger Bands + ADX + Sentiment.
 
 Logica segnali:
-- LONG: EMA9 > EMA21 (cross up) + RSI < 70 + Volume > media + Sentiment > threshold
-- SHORT: EMA9 < EMA21 (cross down) + RSI > 30 + Volume > media + Sentiment < -threshold
-- Il sentiment modifica anche il position sizing
+- FILTRO REGIME: ADX > adx_trend_threshold → nessun segnale (mercato in trend)
+- LONG:  RSI <= rsi_entry_oversold (25) + Close <= bb_lower + Volume > volume_ma
+- SHORT: RSI >= rsi_entry_overbought (75) + Close >= bb_upper + Volume > volume_ma
+- Il sentiment filtra il segnale: LONG bloccato se bearish, SHORT bloccato se bullish
 """
 
 from __future__ import annotations
 
 import pandas as pd
 
-from config.settings import RSI_OVERBOUGHT, RSI_OVERSOLD, SENTIMENT_THRESHOLD
+from config.settings import (
+    ADX_TREND_THRESHOLD,
+    RSI_ENTRY_OVERBOUGHT,
+    RSI_ENTRY_OVERSOLD,
+    SENTIMENT_THRESHOLD,
+)
 from src.sentiment.claude_sentiment import SentimentResult
 from src.utils.logger import setup_logger
 
@@ -18,22 +24,31 @@ logger = setup_logger("strategy")
 
 
 class CombinedStrategy:
-    """Strategia di scalping basata su EMA crossover con filtri RSI e Volume.
+    """Strategia di scalping basata su RSI mean reversion + Bollinger Bands.
+
+    Il regime di mercato viene filtrato tramite ADX: in presenza di trend forte
+    (ADX > adx_trend_threshold) la strategia non emette segnali, poiché il
+    mean reversion perde in trend sostenuti.
 
     Args:
-        rsi_overbought: Soglia RSI overbought (default: 70).
-        rsi_oversold: Soglia RSI oversold (default: 30).
+        rsi_entry_oversold: Soglia RSI per segnale LONG (default: 25).
+        rsi_entry_overbought: Soglia RSI per segnale SHORT (default: 75).
+        adx_trend_threshold: Soglia ADX per filtro regime (default: 25).
+        sentiment_threshold: Score minimo per filtro sentiment (default: 0.3).
+        sentiment_min_confidence: Confidence minima per applicare filtro (default: 0.5).
     """
 
     def __init__(
         self,
-        rsi_overbought: float = RSI_OVERBOUGHT,
-        rsi_oversold: float = RSI_OVERSOLD,
+        rsi_entry_oversold: float = RSI_ENTRY_OVERSOLD,
+        rsi_entry_overbought: float = RSI_ENTRY_OVERBOUGHT,
+        adx_trend_threshold: float = ADX_TREND_THRESHOLD,
         sentiment_threshold: float = SENTIMENT_THRESHOLD,
         sentiment_min_confidence: float = 0.5,
     ) -> None:
-        self.rsi_overbought = rsi_overbought
-        self.rsi_oversold = rsi_oversold
+        self.rsi_entry_oversold = rsi_entry_oversold
+        self.rsi_entry_overbought = rsi_entry_overbought
+        self.adx_trend_threshold = adx_trend_threshold
         self.sentiment_threshold = sentiment_threshold
         self.sentiment_min_confidence = sentiment_min_confidence
 
@@ -45,7 +60,7 @@ class CombinedStrategy:
         """Genera un segnale di trading dall'ultima riga del DataFrame.
 
         Il DataFrame deve contenere le colonne:
-        ema_fast, ema_slow, ema_fast_prev, ema_slow_prev, rsi, volume, volume_ma.
+        rsi, volume, volume_ma, bb_upper, bb_lower, adx, close.
 
         Se fornito, il sentiment filtra il segnale tecnico:
         - LONG bloccato se sentiment bearish (con confidence sufficiente)
@@ -60,41 +75,47 @@ class CombinedStrategy:
         """
         row = df.iloc[-1]
 
-        # Controlla NaN
-        required = ["ema_fast", "ema_slow", "ema_fast_prev", "ema_slow_prev",
-                     "rsi", "volume", "volume_ma"]
+        required = ["rsi", "volume", "volume_ma", "bb_upper", "bb_lower", "adx"]
         if any(pd.isna(row.get(col)) for col in required):
             return None
 
-        ema_fast = row["ema_fast"]
-        ema_slow = row["ema_slow"]
-        ema_fast_prev = row["ema_fast_prev"]
-        ema_slow_prev = row["ema_slow_prev"]
+        adx = row["adx"]
         rsi = row["rsi"]
+        close = row["close"]
         volume = row["volume"]
         volume_ma = row["volume_ma"]
+        bb_upper = row["bb_upper"]
+        bb_lower = row["bb_lower"]
 
-        # Crossover detection
-        bullish_cross = ema_fast_prev <= ema_slow_prev and ema_fast > ema_slow
-        bearish_cross = ema_fast_prev >= ema_slow_prev and ema_fast < ema_slow
+        # Filtro regime: mercato in trend forte → no mean reversion
+        if adx > self.adx_trend_threshold:
+            logger.debug("Nessun segnale: mercato in trend (ADX=%.1f)", adx)
+            return None
 
         # Volume filter
-        volume_ok = volume > volume_ma
+        if volume <= volume_ma:
+            return None
 
-        # LONG
-        if bullish_cross and rsi < self.rsi_overbought and volume_ok:
+        # LONG: RSI oversold + prezzo tocca/buca banda inferiore
+        if rsi <= self.rsi_entry_oversold and close <= bb_lower:
             if not self._sentiment_allows(sentiment, "LONG"):
-                logger.info("LONG bloccato dal sentiment (score=%.2f)", sentiment.sentiment_score)
+                logger.info(
+                    "LONG bloccato dal sentiment (score=%.2f)",
+                    sentiment.sentiment_score,  # type: ignore[union-attr]
+                )
                 return None
-            logger.info("Segnale LONG: EMA cross up, RSI=%.1f, Vol=%.1f", rsi, volume)
+            logger.info("Segnale LONG: RSI=%.1f, Close=%.2f <= BB_lower=%.2f", rsi, close, bb_lower)
             return "LONG"
 
-        # SHORT
-        if bearish_cross and rsi > self.rsi_oversold and volume_ok:
+        # SHORT: RSI overbought + prezzo tocca/buca banda superiore
+        if rsi >= self.rsi_entry_overbought and close >= bb_upper:
             if not self._sentiment_allows(sentiment, "SHORT"):
-                logger.info("SHORT bloccato dal sentiment (score=%.2f)", sentiment.sentiment_score)
+                logger.info(
+                    "SHORT bloccato dal sentiment (score=%.2f)",
+                    sentiment.sentiment_score,  # type: ignore[union-attr]
+                )
                 return None
-            logger.info("Segnale SHORT: EMA cross down, RSI=%.1f, Vol=%.1f", rsi, volume)
+            logger.info("Segnale SHORT: RSI=%.1f, Close=%.2f >= BB_upper=%.2f", rsi, close, bb_upper)
             return "SHORT"
 
         return None
