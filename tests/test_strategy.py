@@ -52,7 +52,7 @@ class TestADXRegimeFilter:
             close=34490.0,  # <= bb_lower (34500)
             volume=150.0,
             volume_ma=100.0,
-            adx=30.0,  # sopra ADX_TREND_THRESHOLD (25)
+            adx=31.0,  # sopra ADX_TREND_THRESHOLD (30)
         )
         assert strategy.generate_signal(df) is None
 
@@ -63,7 +63,7 @@ class TestADXRegimeFilter:
             close=35510.0,  # >= bb_upper (35500)
             volume=150.0,
             volume_ma=100.0,
-            adx=30.0,
+            adx=31.0,  # sopra ADX_TREND_THRESHOLD (30)
         )
         assert strategy.generate_signal(df) is None
 
@@ -74,7 +74,7 @@ class TestADXRegimeFilter:
             close=34490.0,
             volume=150.0,
             volume_ma=100.0,
-            adx=25.0,  # uguale alla soglia → non trend forte
+            adx=30.0,  # uguale alla soglia (30) → non bloccato
         )
         assert strategy.generate_signal(df) == "LONG"
 
@@ -153,10 +153,10 @@ class TestLongSignal:
         assert strategy.generate_signal(df) is None
 
     def test_no_long_when_close_above_bb_lower_and_rsi_not_extreme(self, strategy):
-        """Nessun LONG se close > bb_lower e RSI non è estremo (>= 20)."""
+        """Nessun LONG se close > bb_lower e RSI non è estremo (>= 22)."""
         df = _make_df(
-            rsi=20.0,
-            close=34600.0,  # sopra bb_lower=34500; RSI=20 non è < 20
+            rsi=23.0,
+            close=34600.0,  # sopra bb_lower=34500; RSI=23 non è < 22
             volume=150.0,
             volume_ma=100.0,
             adx=15.0,
@@ -249,10 +249,10 @@ class TestShortSignal:
         assert strategy.generate_signal(df) is None
 
     def test_no_short_when_close_below_bb_upper_and_rsi_not_extreme(self, strategy):
-        """Nessun SHORT se close < bb_upper e RSI non è estremo (<= 80)."""
+        """Nessun SHORT se close < bb_upper e RSI non è estremo (<= 78)."""
         df = _make_df(
-            rsi=80.0,
-            close=35400.0,  # sotto bb_upper; RSI=80 non è > 80
+            rsi=77.0,
+            close=35400.0,  # sotto bb_upper; RSI=77 non è > 78
             volume=150.0,
             volume_ma=100.0,
             adx=15.0,

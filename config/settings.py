@@ -31,16 +31,16 @@ ATR_PERIOD: int = 14
 
 # ADX — filtro regime di mercato
 ADX_PERIOD: int = 14
-ADX_TREND_THRESHOLD: float = 25.0  # sopra questo = trend forte, no mean reversion
+ADX_TREND_THRESHOLD: float = 30.0  # era 25 — alzato perché BTC ha ADX medio ~28
 
 # RSI soglie entry — condizione A (RSI moderato + BB)
-RSI_ENTRY_OVERSOLD: float = 30.0    # soglia entry LONG via cond A (era 25)
-RSI_ENTRY_OVERBOUGHT: float = 70.0  # soglia entry SHORT via cond A (era 75)
+RSI_ENTRY_OVERSOLD: float = 32.0    # era 30 — lieve rilassamento
+RSI_ENTRY_OVERBOUGHT: float = 68.0  # era 70 — lieve rilassamento
 RSI_EXIT_NEUTRAL: float = 50.0      # target uscita per mean reversion
 
 # RSI soglie extreme — condizione B (RSI estremo, senza BB)
-RSI_EXTREME_OVERSOLD: float = 20.0   # LONG senza BB se RSI < questa soglia
-RSI_EXTREME_OVERBOUGHT: float = 80.0 # SHORT senza BB se RSI > questa soglia
+RSI_EXTREME_OVERSOLD: float = 22.0   # era 20 — lieve rilassamento
+RSI_EXTREME_OVERBOUGHT: float = 78.0 # era 80 — lieve rilassamento
 
 # Volume filter ratio — volume >= volume_ma * ratio
 VOLUME_FILTER_RATIO: float = 0.8    # rilassato del 20% rispetto alla MA
