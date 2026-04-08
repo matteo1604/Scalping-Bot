@@ -11,17 +11,31 @@ Bot di trading automatico per scalping su criptovalute (Binance), progettato per
 - **Timeframe:** 5 minuti
 
 ## Strategia di Trading
-Approccio mean reversion multi-indicatore:
-1. **ADX (14)** → filtro regime di mercato: se ADX > 25 (trend forte) → nessun segnale
-2. **RSI Mean Reversion + Bollinger Bands** → segnale primario (entrata su estremi)
-3. **Volume** → conferma (volume sopra la media = segnale valido)
-4. **Claude AI Sentiment** → filtro finale prima dell'esecuzione
+Approccio **dual-mode** che adatta automaticamente la logica al regime di mercato rilevato dall'ADX:
 
-### Logica dei Segnali
-- **LONG:** ADX ≤ 25 + RSI ≤ 25 + Close ≤ BB_lower + Volume sopra media + Sentiment non fortemente bearish
-- **SHORT:** ADX ≤ 25 + RSI ≥ 75 + Close ≥ BB_upper + Volume sopra media + Sentiment non fortemente bullish
+### Selezione Modalità
+- **ADX ≤ 30** → Mean Reversion (mercato laterale)
+- **ADX > 30** → Trend Following (mercato in trend)
+
+### Modalità 1: Mean Reversion (ADX ≤ 30)
+Entrata su inversioni agli estremi delle Bollinger Bands:
+- **LONG cond A:** RSI ≤ 32 + Close ≤ BB_lower + Volume ok
+- **LONG cond B:** RSI < 22 (basta da solo) + Volume ok
+- **SHORT cond A:** RSI ≥ 68 + Close ≥ BB_upper + Volume ok
+- **SHORT cond B:** RSI > 78 (basta da solo) + Volume ok
+- Risk management: SL = ATR × 1.5, TP = ATR × 2.0
+
+### Modalità 2: Trend Following (ADX > 30)
+Entrata su pullback nella direzione del trend rilevata da DI+/DI-:
+- **LONG:** DI+ > DI- AND Close > EMA_slow AND RSI in [40, 55] AND Close > BB_middle + Volume ok
+- **SHORT:** DI- > DI+ AND Close < EMA_slow AND RSI in [45, 60] AND Close < BB_middle + Volume ok
+- Risk management: SL = ATR × 1.5 × 1.5 (moltiplicatore extra per trend), TP = ATR × 2.0 × 1.5
+
+### Filtro Comune
+- **Volume:** volume ≥ volume_ma × 0.8
+- **Sentiment AI:** filtro finale — LONG bloccato se bearish forte, SHORT bloccato se bullish forte
 - Il sentiment AI agisce come filtro e modificatore del position sizing, NON come segnale standalone
-- EMA 9/21 restano calcolati ma non usati dalla strategia (retrocompatibilità)
+- EMA 9/21 restano calcolati; EMA_slow (21) è usata come riferimento trend in modalità 2
 
 ### Sentiment Engine (Claude API)
 Il bot interroga Claude API con web search abilitato prima di ogni trade rilevato dai segnali tecnici. La risposta attesa è un JSON strutturato:
