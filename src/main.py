@@ -22,6 +22,8 @@ from config.settings import (
     LIVE_CAPITAL_USDT,
     LOG_LEVEL,
     MIN_ORDER_SIZE_USDT,
+    PARTIAL_TP_RATIO,
+    PARTIAL_TP_SIZE_RATIO,
     SLACK_WEBHOOK_URL,
     SYMBOL,
     TIMEFRAME,
@@ -248,7 +250,7 @@ class TradingLoop:
                 current_trailing=self._position["trailing_stop"],
                 atr=atr,
             )
-            self._check_open_position(row)
+            self._check_open_position(row, df)
         else:
             # Genera segnale
             signal_raw = self._strategy.generate_signal(df)
@@ -277,14 +279,19 @@ class TradingLoop:
         # Aggiorna status
         self._write_status(row)
 
-    def _check_open_position(self, row) -> None:
-        """Controlla se la posizione aperta ha raggiunto SL/TP/trailing.
+    def _check_open_position(self, row, df) -> None:
+        """Controlla se la posizione aperta deve essere chiusa.
 
-        Ordine conservativo: SL -> trailing -> TP.
-        Usa high/low della candela per check realistici.
+        Priorità dei check (dalla più urgente alla meno urgente):
+        1. Stop Loss → chiudi tutto
+        2. Trailing Stop → chiudi tutto
+        3. Partial Take Profit → chiudi metà, SL a break-even
+        4. Signal Exit (RSI target o DI cross) → chiudi tutto il residuo
+        5. Take Profit → chiudi tutto
 
         Args:
             row: Ultima riga del DataFrame con high, low, close.
+            df: DataFrame completo (serve per should_exit).
         """
         pos = self._position
         if pos is None:
@@ -293,20 +300,123 @@ class TradingLoop:
         high = row["high"]
         low = row["low"]
 
+        # --- 1. STOP LOSS (priorità massima) ---
+        if pos["side"] == "LONG" and low <= pos["stop_loss"]:
+            self._close_position(row, "stop_loss")
+            return
+        if pos["side"] == "SHORT" and high >= pos["stop_loss"]:
+            self._close_position(row, "stop_loss")
+            return
+
+        # --- 2. TRAILING STOP ---
+        if pos["side"] == "LONG" and low <= pos["trailing_stop"]:
+            self._close_position(row, "trailing_stop")
+            return
+        if pos["side"] == "SHORT" and high >= pos["trailing_stop"]:
+            self._close_position(row, "trailing_stop")
+            return
+
+        # --- 3. PARTIAL TAKE PROFIT (50% del percorso verso TP) ---
+        if not pos.get("partial_tp_done", False):
+            partial_target = self._calc_partial_tp_price(pos)
+            if partial_target is not None:
+                hit_partial = False
+                if pos["side"] == "LONG" and high >= partial_target:
+                    hit_partial = True
+                elif pos["side"] == "SHORT" and low <= partial_target:
+                    hit_partial = True
+
+                if hit_partial:
+                    self._execute_partial_tp(row, partial_target)
+                    return  # non fare altri check in questo tick
+
+        # --- 4. SIGNAL EXIT (tecnico) ---
+        exit_signal = self._strategy.should_exit(df, pos)
+        if exit_signal is not None:
+            self._close_position(row, exit_signal)
+            return
+
+        # --- 5. TAKE PROFIT ---
+        if pos["side"] == "LONG" and high >= pos["take_profit"]:
+            self._close_position(row, "take_profit")
+            return
+        if pos["side"] == "SHORT" and low <= pos["take_profit"]:
+            self._close_position(row, "take_profit")
+            return
+
+    def _calc_partial_tp_price(self, pos: dict) -> float | None:
+        """Calcola il prezzo del partial take profit (50% del percorso verso TP).
+
+        Args:
+            pos: Dict della posizione aperta.
+
+        Returns:
+            Prezzo del partial TP, o None se non calcolabile.
+        """
+        entry = pos["entry_price"]
+        tp = pos["take_profit"]
+        ratio = PARTIAL_TP_RATIO
+
         if pos["side"] == "LONG":
-            if low <= pos["stop_loss"]:
-                self._close_position(row, "stop_loss")
-            elif low <= pos["trailing_stop"]:
-                self._close_position(row, "trailing_stop")
-            elif high >= pos["take_profit"]:
-                self._close_position(row, "take_profit")
+            return entry + (tp - entry) * ratio
         else:  # SHORT
-            if high >= pos["stop_loss"]:
-                self._close_position(row, "stop_loss")
-            elif high >= pos["trailing_stop"]:
-                self._close_position(row, "trailing_stop")
-            elif low <= pos["take_profit"]:
-                self._close_position(row, "take_profit")
+            return entry - (entry - tp) * ratio
+
+    def _execute_partial_tp(self, row, partial_price: float) -> None:
+        """Esegue il partial take profit: chiude metà posizione, SL a break-even.
+
+        Args:
+            row: Riga corrente del DataFrame.
+            partial_price: Prezzo del partial TP raggiunto.
+        """
+        pos = self._position
+        if pos is None:
+            return
+
+        old_size = pos["size_usdt"]
+        close_size = old_size * PARTIAL_TP_SIZE_RATIO
+        remaining_size = old_size - close_size
+
+        entry = pos["entry_price"]
+        if pos["side"] == "LONG":
+            pnl_pct = ((partial_price - entry) / entry) * 100.0
+        else:
+            pnl_pct = ((entry - partial_price) / entry) * 100.0
+        pnl = (pnl_pct / 100.0) * close_size
+
+        logger.info(
+            "PARTIAL TP: %s chiuso %.2f USDT @ %.2f (PnL: %.2f%%, %.4f USDT). "
+            "Residuo: %.2f USDT, SL → break-even (%.2f)",
+            pos["side"], close_size, partial_price, pnl_pct, pnl, remaining_size, entry,
+        )
+
+        # Ordine reale in live mode
+        if self.mode == "live":
+            try:
+                amount_btc = close_size / partial_price
+                order_side = "sell" if pos["side"] == "LONG" else "buy"
+                self._exchange.create_order(SYMBOL, order_side, amount_btc)
+                logger.info("Ordine partial TP piazzato: %s %.6f BTC", order_side, amount_btc)
+            except Exception:
+                logger.exception("Errore ordine partial TP — posizione non aggiornata")
+                return  # non aggiornare la posizione se l'ordine fallisce
+
+        # Aggiorna posizione
+        pos["size_usdt"] = remaining_size
+        pos["stop_loss"] = entry  # SL a break-even
+        pos["partial_tp_done"] = True
+
+        # Registra il trade parziale
+        self._risk.record_trade(pnl)
+
+        # Notifica Slack
+        self._notifier.notify(
+            "PARTIAL TP %s @ %.2f | Chiuso %.2f USDT | PnL: %+.2f%% (%+.4f USDT) | "
+            "Residuo: %.2f USDT, SL → break-even" % (
+                pos["side"], partial_price, close_size, pnl_pct, pnl, remaining_size,
+            ),
+            level="info",
+        )
 
     def _open_position(self, signal: str, row, sentiment: SentimentResult, atr: float) -> None:
         """Apre una nuova posizione (paper o live).
@@ -329,7 +439,7 @@ class TradingLoop:
             adx_val = float(row["adx"])
         except (KeyError, TypeError, ValueError):
             adx_val = 0.0
-        strategy_type = "trend" if adx_val > ADX_TREND_THRESHOLD else "mean_reversion"
+        strategy_type = "trend" if adx_val > ADX_TREND_THRESHOLD else "reversion"
         effective_atr = atr * 1.5 if strategy_type == "trend" else atr
 
         # Capitale: balance reale in live, simulato in paper
@@ -382,6 +492,8 @@ class TradingLoop:
             "take_profit": levels["take_profit"],
             "trailing_stop": levels["trailing_stop"],
             "size_usdt": size,
+            "partial_tp_done": False,
+            "original_size_usdt": size,
         }
 
         msg = "APERTA %s @ %.2f | SL=%.2f TP=%.2f Trail=%.2f | Size=%.2f USDT" % (

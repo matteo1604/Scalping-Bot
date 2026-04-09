@@ -600,3 +600,67 @@ class TestTrendFollowing:
             volume_ma=100.0,
         )
         assert strategy.generate_signal(df) == "LONG"
+
+
+class TestShouldExit:
+    """Test per should_exit() — exit basate su segnali tecnici."""
+
+    def test_mean_reversion_long_exit_at_rsi_50(self, strategy):
+        """Mean rev LONG esce quando RSI >= 50."""
+        df = _make_df(rsi=52.0, adx=15.0, di_plus=20.0, di_minus=20.0)
+        pos = {"side": "LONG", "strategy": "reversion"}
+        assert strategy.should_exit(df, pos) == "signal_exit"
+
+    def test_mean_reversion_long_no_exit_below_50(self, strategy):
+        """Mean rev LONG non esce se RSI < 50."""
+        df = _make_df(rsi=45.0, adx=15.0, di_plus=20.0, di_minus=20.0)
+        pos = {"side": "LONG", "strategy": "reversion"}
+        assert strategy.should_exit(df, pos) is None
+
+    def test_mean_reversion_short_exit_at_rsi_50(self, strategy):
+        """Mean rev SHORT esce quando RSI <= 50."""
+        df = _make_df(rsi=48.0, adx=15.0, di_plus=20.0, di_minus=20.0)
+        pos = {"side": "SHORT", "strategy": "reversion"}
+        assert strategy.should_exit(df, pos) == "signal_exit"
+
+    def test_mean_reversion_short_no_exit_above_50(self, strategy):
+        """Mean rev SHORT non esce se RSI > 50."""
+        df = _make_df(rsi=55.0, adx=15.0, di_plus=20.0, di_minus=20.0)
+        pos = {"side": "SHORT", "strategy": "reversion"}
+        assert strategy.should_exit(df, pos) is None
+
+    def test_trend_long_exit_on_di_cross(self, strategy):
+        """Trend LONG esce quando DI- > DI+."""
+        df = _make_df(rsi=50.0, adx=35.0, di_plus=18.0, di_minus=25.0)
+        pos = {"side": "LONG", "strategy": "trend"}
+        assert strategy.should_exit(df, pos) == "signal_exit"
+
+    def test_trend_long_no_exit_when_di_aligned(self, strategy):
+        """Trend LONG non esce se DI+ > DI-."""
+        df = _make_df(rsi=50.0, adx=35.0, di_plus=28.0, di_minus=18.0)
+        pos = {"side": "LONG", "strategy": "trend"}
+        assert strategy.should_exit(df, pos) is None
+
+    def test_trend_short_exit_on_di_cross(self, strategy):
+        """Trend SHORT esce quando DI+ > DI-."""
+        df = _make_df(rsi=50.0, adx=35.0, di_plus=28.0, di_minus=18.0)
+        pos = {"side": "SHORT", "strategy": "trend"}
+        assert strategy.should_exit(df, pos) == "signal_exit"
+
+    def test_trend_short_no_exit_when_di_aligned(self, strategy):
+        """Trend SHORT non esce se DI- > DI+."""
+        df = _make_df(rsi=50.0, adx=35.0, di_plus=15.0, di_minus=28.0)
+        pos = {"side": "SHORT", "strategy": "trend"}
+        assert strategy.should_exit(df, pos) is None
+
+    def test_no_exit_with_nan_indicators(self, strategy):
+        """Nessun exit se ci sono NaN."""
+        df = _make_df(rsi=float("nan"))
+        pos = {"side": "LONG", "strategy": "reversion"}
+        assert strategy.should_exit(df, pos) is None
+
+    def test_missing_strategy_defaults_to_reversion(self, strategy):
+        """Se manca il campo 'strategy', usa reversion come default."""
+        df = _make_df(rsi=52.0, adx=15.0, di_plus=20.0, di_minus=20.0)
+        pos = {"side": "LONG"}  # no "strategy" key
+        assert strategy.should_exit(df, pos) == "signal_exit"

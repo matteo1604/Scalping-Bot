@@ -33,7 +33,7 @@ class TestCheckOpenPosition:
         row = MagicMock()
         row.__getitem__ = lambda s, k: {"high": 50100.0, "low": 49800.0, "close": 49900.0}[k]
 
-        loop._check_open_position(row)
+        loop._check_open_position(row, MagicMock())
         assert loop._position is None  # posizione chiusa
 
     def test_long_tp_hit(self, loop):
@@ -46,7 +46,7 @@ class TestCheckOpenPosition:
         row = MagicMock()
         row.__getitem__ = lambda s, k: {"high": 50250.0, "low": 49900.0, "close": 50200.0}[k]
 
-        loop._check_open_position(row)
+        loop._check_open_position(row, MagicMock())
         assert loop._position is None
 
     def test_long_sl_priority_over_tp(self, loop):
@@ -61,7 +61,7 @@ class TestCheckOpenPosition:
         row.__getitem__ = lambda s, k: {"high": 50300.0, "low": 49800.0, "close": 50000.0}[k]
 
         loop._close_position = MagicMock()
-        loop._check_open_position(row)
+        loop._check_open_position(row, MagicMock())
         # Deve chiamare _close_position con reason="stop_loss" (non take_profit)
         loop._close_position.assert_called_once()
         call_args = loop._close_position.call_args
@@ -78,7 +78,7 @@ class TestCheckOpenPosition:
         row = MagicMock()
         row.__getitem__ = lambda s, k: {"high": 50200.0, "low": 49900.0, "close": 50100.0}[k]
 
-        loop._check_open_position(row)
+        loop._check_open_position(row, MagicMock())
         assert loop._position is None
 
     def test_no_exit_when_within_range(self, loop):
@@ -91,7 +91,7 @@ class TestCheckOpenPosition:
         row = MagicMock()
         row.__getitem__ = lambda s, k: {"high": 50100.0, "low": 49901.0, "close": 50050.0}[k]
 
-        loop._check_open_position(row)
+        loop._check_open_position(row, MagicMock())
         assert loop._position is not None  # posizione ancora aperta
 
     def test_trailing_stop_updates(self, loop):
@@ -105,10 +105,56 @@ class TestCheckOpenPosition:
         # Prezzo sale a 50150, trailing dovrebbe salire
         row.__getitem__ = lambda s, k: {"high": 50150.0, "low": 50050.0, "close": 50100.0}[k]
 
-        loop._check_open_position(row)
+        loop._check_open_position(row, MagicMock())
         assert loop._position is not None
         # Trailing dovrebbe essere salito (esatto valore dipende da ATR, ma > 49900)
         assert loop._position["trailing_stop"] >= 49900.0
+
+
+class TestPartialTP:
+    """Test per il partial take profit."""
+
+    def test_partial_tp_triggers_at_50pct(self, loop):
+        """Partial TP si attiva al 50% del percorso verso TP."""
+        loop._position = {
+            "side": "LONG", "entry_price": 50000.0, "entry_time": "t",
+            "stop_loss": 49850.0, "take_profit": 50200.0,
+            "trailing_stop": 49900.0, "size_usdt": 100.0,
+            "partial_tp_done": False, "original_size_usdt": 100.0,
+            "strategy": "reversion",
+        }
+        row = MagicMock()
+        row.__getitem__ = lambda s, k: {"high": 50150.0, "low": 50050.0, "close": 50100.0}[k]
+        df = MagicMock()
+
+        loop._check_open_position(row, df)
+
+        assert loop._position is not None
+        assert loop._position["partial_tp_done"] is True
+        assert loop._position["size_usdt"] == 50.0
+        assert loop._position["stop_loss"] == 50000.0  # break-even
+
+    def test_partial_tp_not_repeated(self, loop):
+        """Partial TP non si ripete se già fatto."""
+        loop._position = {
+            "side": "LONG", "entry_price": 50000.0, "entry_time": "t",
+            "stop_loss": 50000.0, "take_profit": 50200.0,
+            "trailing_stop": 49950.0, "size_usdt": 50.0,
+            "partial_tp_done": True, "original_size_usdt": 100.0,
+            "strategy": "reversion",
+        }
+        row = MagicMock()
+        row.__getitem__ = lambda s, k: {"high": 50150.0, "low": 50060.0, "close": 50100.0}[k]
+        df = MagicMock()
+        # Stub should_exit per isolare il test dal comportamento del MagicMock df
+        loop._strategy.should_exit = MagicMock(return_value=None)
+        loop._execute_partial_tp = MagicMock()
+
+        loop._check_open_position(row, df)
+
+        loop._execute_partial_tp.assert_not_called()
+        assert loop._position is not None
+        assert loop._position["size_usdt"] == 50.0  # invariata
 
 
 class TestOpenClosePosition:
