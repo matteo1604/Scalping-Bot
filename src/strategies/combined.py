@@ -24,6 +24,7 @@ from config.settings import (
     ADX_TREND_THRESHOLD,
     RSI_ENTRY_OVERBOUGHT,
     RSI_ENTRY_OVERSOLD,
+    RSI_EXIT_MEAN_REVERSION,
     RSI_EXTREME_OVERBOUGHT,
     RSI_EXTREME_OVERSOLD,
     SENTIMENT_THRESHOLD,
@@ -232,6 +233,51 @@ class CombinedStrategy:
             "No signal (trend): ADX=%.1f, DI+=%.1f, DI-=%.1f, RSI=%.1f, close=%.1f, ema_slow=%.1f",
             adx, di_plus, di_minus, rsi, close, ema_slow,
         )
+        return None
+
+    def should_exit(self, df: pd.DataFrame, position: dict) -> str | None:
+        """Verifica se la posizione aperta dovrebbe essere chiusa su segnale tecnico.
+
+        NON controlla SL/TP/trailing — quelli sono gestiti dal TradingLoop.
+        Controlla solo condizioni tecniche di uscita.
+
+        Args:
+            df: DataFrame con indicatori calcolati.
+            position: Dict della posizione aperta con "side" e "strategy".
+
+        Returns:
+            "signal_exit" se la posizione dovrebbe chiudersi, None altrimenti.
+        """
+        row = df.iloc[-1]
+
+        required = ["rsi", "adx", "di_plus", "di_minus"]
+        if any(pd.isna(row.get(col)) for col in required):
+            return None
+
+        rsi = row["rsi"]
+        side = position["side"]
+        strategy = position.get("strategy", "reversion")
+
+        if strategy == "reversion":
+            # Mean reversion: chiudi quando RSI torna a 50 (obiettivo raggiunto)
+            if side == "LONG" and rsi >= RSI_EXIT_MEAN_REVERSION:
+                logger.info("Exit signal (mean-rev): RSI=%.1f ha raggiunto target %.1f", rsi, RSI_EXIT_MEAN_REVERSION)
+                return "signal_exit"
+            if side == "SHORT" and rsi <= RSI_EXIT_MEAN_REVERSION:
+                logger.info("Exit signal (mean-rev): RSI=%.1f ha raggiunto target %.1f", rsi, RSI_EXIT_MEAN_REVERSION)
+                return "signal_exit"
+
+        elif strategy == "trend":
+            # Trend following: chiudi se DI+/DI- si incrociano nella direzione opposta
+            di_plus = row["di_plus"]
+            di_minus = row["di_minus"]
+            if side == "LONG" and di_minus > di_plus:
+                logger.info("Exit signal (trend): DI- (%.1f) > DI+ (%.1f), trend invertito", di_minus, di_plus)
+                return "signal_exit"
+            if side == "SHORT" and di_plus > di_minus:
+                logger.info("Exit signal (trend): DI+ (%.1f) > DI- (%.1f), trend invertito", di_plus, di_minus)
+                return "signal_exit"
+
         return None
 
     def _sentiment_allows(self, sentiment: SentimentResult | None, direction: str) -> bool:
