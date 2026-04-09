@@ -79,6 +79,11 @@ HTF_CANDLES: int = 50  # quante candele 1h scaricare (50 = ~2 giorni, abbastanza
 HTF_RSI_OVERBOUGHT: float = 65.0  # RSI 1h sopra questo → blocca LONG mean reversion
 HTF_RSI_OVERSOLD: float = 35.0    # RSI 1h sotto questo → blocca SHORT mean reversion
 
+# --- Exit intelligenti ---
+PARTIAL_TP_RATIO: float = 0.5       # chiudi metà posizione al 50% del percorso verso TP
+PARTIAL_TP_SIZE_RATIO: float = 0.5   # percentuale della posizione da chiudere (50%)
+RSI_EXIT_MEAN_REVERSION: float = 50.0  # RSI target per uscita mean reversion
+
 # --- Notifiche ---
 SLACK_WEBHOOK_URL: str = os.getenv("SLACK_WEBHOOK_URL", "")
 
