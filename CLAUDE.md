@@ -46,6 +46,14 @@ Il timeframe 1h agisce come semaforo sui segnali del 5min:
 - Se il fetch 1h fallisce, il filtro è disattivato (fail-open)
 - Ordine filtri: sentiment → HTF → apertura posizione
 
+### Exit Intelligenti
+Le posizioni vengono chiuse con logica multi-livello (in ordine di priorità):
+1. **Stop Loss** → chiude tutto (priorità massima)
+2. **Trailing Stop** → chiude tutto
+3. **Partial Take Profit** → al 50% del percorso verso il TP, chiude metà posizione e sposta SL a break-even
+4. **Signal Exit** → mean reversion chiude quando RSI torna a 50; trend following chiude quando DI+/DI- si invertono
+5. **Take Profit** → chiude tutto il residuo
+
 ### Sentiment Engine (Claude API)
 Il bot interroga Claude API con web search abilitato prima di ogni trade rilevato dai segnali tecnici. La risposta attesa è un JSON strutturato:
 ```json

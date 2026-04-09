@@ -24,7 +24,8 @@
       "Bash(pytest tests/ -q)",
       "Bash(pytest tests/ -v --ignore=tests/test_exchange_integration.py)",
       "Bash(pytest tests/ -q --ignore=tests/test_exchange_integration.py)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(git stash:*)"
     ]
   }
 }
