@@ -213,6 +213,7 @@ class TradingLoop:
             return
 
         self._check_daily_reset()
+        self._risk.tick_cooldown()
 
         # Fetch dati 1h per filtro multi-timeframe
         try:
@@ -264,17 +265,28 @@ class TradingLoop:
                 # Rigenera con filtro sentiment
                 signal_filtered = self._strategy.generate_signal(df, sentiment=sentiment)
 
-                if signal_filtered is not None and self._risk.can_trade(
-                    capital=LIVE_CAPITAL_USDT,
-                ):
-                    # Determina il tipo di strategia dal contesto
-                    strategy_mode = "trend" if row["adx"] > ADX_TREND_THRESHOLD else "reversion"
-
-                    # Filtro multi-timeframe
-                    if not self._htf_filter.allows_signal(signal_filtered, strategy_mode, self._htf_data):
-                        self._last_signal = None  # segnale bloccato da HTF
+                if signal_filtered is not None:
+                    if not self._risk.can_trade(capital=LIVE_CAPITAL_USDT):
+                        if self._risk.streak_stopped:
+                            self._notifier.notify(
+                                "STREAK STOP: %d loss consecutive — "
+                                "trading sospeso fino a domani" % self._risk.consecutive_losses,
+                                level="warning",
+                            )
+                        elif self._risk.cooldown_remaining > 0:
+                            logger.info(
+                                "Segnale %s ignorato: cooldown %d candele rimanenti",
+                                signal_filtered, self._risk.cooldown_remaining,
+                            )
                     else:
-                        self._open_position(signal_filtered, row, sentiment, atr)
+                        # Determina il tipo di strategia dal contesto
+                        strategy_mode = "trend" if row["adx"] > ADX_TREND_THRESHOLD else "reversion"
+
+                        # Filtro multi-timeframe
+                        if not self._htf_filter.allows_signal(signal_filtered, strategy_mode, self._htf_data):
+                            self._last_signal = None  # segnale bloccato da HTF
+                        else:
+                            self._open_position(signal_filtered, row, sentiment, atr)
 
         # Aggiorna status
         self._write_status(row)
@@ -408,6 +420,7 @@ class TradingLoop:
 
         # Registra il trade parziale
         self._risk.record_trade(pnl)
+        self._risk.record_trade_result(pnl)  # partial TP è sempre positivo → resetta streak
 
         # Notifica Slack
         self._notifier.notify(
@@ -551,6 +564,7 @@ class TradingLoop:
         self._notifier.notify(msg)
 
         self._risk.record_trade(pnl)
+        self._risk.record_trade_result(pnl)
         self._daily_trades += 1
         self._daily_pnl += pnl
         if pnl > 0:
@@ -619,6 +633,11 @@ class TradingLoop:
             "htf": {
                 "rsi_1h": self._htf_data.get("rsi_1h"),
                 "trend_1h": self._htf_data.get("trend_1h"),
+            },
+            "cooldown": {
+                "consecutive_losses": self._risk.consecutive_losses,
+                "cooldown_remaining": self._risk.cooldown_remaining,
+                "streak_stopped": self._risk.streak_stopped,
             },
         }
 
