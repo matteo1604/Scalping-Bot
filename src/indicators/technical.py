@@ -101,12 +101,14 @@ def add_prev_indicators(df: pd.DataFrame) -> pd.DataFrame:
     Necessario per rilevare crossover (confronto tra candela corrente e precedente).
 
     Args:
-        df: DataFrame con colonne ema_fast e ema_slow.
+        df: DataFrame con colonne ema_fast, ema_slow, di_plus, di_minus.
 
     Returns:
-        DataFrame con colonne ema_fast_prev e ema_slow_prev aggiunte.
+        DataFrame con colonne ema_fast_prev, ema_slow_prev, di_plus_prev, di_minus_prev aggiunte.
     """
     result = df.copy()
     result["ema_fast_prev"] = result["ema_fast"].shift(1)
     result["ema_slow_prev"] = result["ema_slow"].shift(1)
+    result["di_plus_prev"] = result["di_plus"].shift(1)
+    result["di_minus_prev"] = result["di_minus"].shift(1)
     return result

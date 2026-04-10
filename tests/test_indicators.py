@@ -197,3 +197,35 @@ class TestAddPrevIndicators:
         idx = valid.index[0]
         pos = result.index.get_loc(idx)
         assert result["ema_fast_prev"].iloc[pos] == result["ema_fast"].iloc[pos - 1]
+
+
+class TestAddPrevDIIndicators:
+    """Nuove colonne DI prev aggiunte da add_prev_indicators."""
+
+    def test_adds_di_plus_prev(self, sample_ohlcv):
+        df = add_indicators(sample_ohlcv)
+        result = add_prev_indicators(df)
+        assert "di_plus_prev" in result.columns
+
+    def test_adds_di_minus_prev(self, sample_ohlcv):
+        df = add_indicators(sample_ohlcv)
+        result = add_prev_indicators(df)
+        assert "di_minus_prev" in result.columns
+
+    def test_di_plus_prev_is_shifted(self, sample_ohlcv):
+        df = add_indicators(sample_ohlcv)
+        result = add_prev_indicators(df)
+        valid = result.dropna(subset=["di_plus", "di_plus_prev"])
+        assert len(valid) > 0
+        idx = valid.index[1]
+        prev_idx = valid.index[0]
+        assert result.loc[idx, "di_plus_prev"] == pytest.approx(result.loc[prev_idx, "di_plus"])
+
+    def test_di_minus_prev_is_shifted(self, sample_ohlcv):
+        df = add_indicators(sample_ohlcv)
+        result = add_prev_indicators(df)
+        valid = result.dropna(subset=["di_minus", "di_minus_prev"])
+        assert len(valid) > 0
+        idx = valid.index[1]
+        prev_idx = valid.index[0]
+        assert result.loc[idx, "di_minus_prev"] == pytest.approx(result.loc[prev_idx, "di_minus"])
