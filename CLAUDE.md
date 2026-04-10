@@ -54,6 +54,17 @@ Le posizioni vengono chiuse con logica multi-livello (in ordine di priorità):
 4. **Signal Exit** → mean reversion chiude quando RSI torna a 50; trend following chiude quando DI+/DI- si invertono
 5. **Take Profit** → chiude tutto il residuo
 
+### Loss Cooldown & Streak Protection
+Protezione contro mercati choppy che generano loss consecutive:
+- **Cooldown progressivo**: dopo ogni SL, il bot aspetta prima di riaprire
+  - 1 loss → 15 min di pausa
+  - 2 loss consecutive → 30 min
+  - 3 loss → 1 ora
+  - 4 loss → 2 ore (cap massimo)
+- **Streak stop**: dopo 5 loss consecutive, trading sospeso fino al giorno dopo
+- **Reset**: un trade vincente (anche partial TP) resetta il contatore a zero
+- **Daily reset**: tutto si azzera a mezzanotte
+
 ### Sentiment Engine (Claude API)
 Il bot interroga Claude API con web search abilitato prima di ogni trade rilevato dai segnali tecnici. La risposta attesa è un JSON strutturato:
 ```json
