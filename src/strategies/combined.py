@@ -140,7 +140,7 @@ class CombinedStrategy:
         if adx > self.adx_trend_threshold:
             signal = self._trend_following_signal(row)
         else:
-            signal = self._mean_reversion_signal(row)
+            signal = self._mean_reversion_signal(df)
 
         if signal is None:
             return None
@@ -155,43 +155,55 @@ class CombinedStrategy:
 
         return signal
 
-    def _mean_reversion_signal(self, row: pd.Series) -> str | None:
+    def _mean_reversion_signal(self, df: pd.DataFrame) -> str | None:
         """Genera segnale mean reversion (ADX <= threshold).
 
         Condizioni LONG:
-        - A: RSI <= rsi_entry_oversold AND close <= bb_lower
-        - B: RSI < rsi_extreme_oversold (basta da solo)
+        - A: RSI <= rsi_entry_oversold AND close <= bb_lower AND RSI in risalita
+        - B: RSI < rsi_extreme_oversold AND RSI in risalita
 
         Condizioni SHORT:
-        - A: RSI >= rsi_entry_overbought AND close >= bb_upper
-        - B: RSI > rsi_extreme_overbought (basta da solo)
+        - A: RSI >= rsi_entry_overbought AND close >= bb_upper AND RSI in discesa
+        - B: RSI > rsi_extreme_overbought AND RSI in discesa
+
+        Il "turning" richiede almeno 2 candele: len(df) < 2 → None.
         """
+        if len(df) < 2:
+            return None
+
+        row = df.iloc[-1]
+        prev_row = df.iloc[-2]
+
         rsi = row["rsi"]
+        prev_rsi = prev_row["rsi"]
         close = row["close"]
         bb_upper = row["bb_upper"]
         bb_lower = row["bb_lower"]
 
-        long_cond_a = rsi <= self.rsi_entry_oversold and close <= bb_lower
-        long_cond_b = rsi < self.rsi_extreme_oversold
+        rsi_turning_up = rsi > prev_rsi      # RSI risale = momentum esaurito al ribasso
+        rsi_turning_down = rsi < prev_rsi    # RSI scende = momentum esaurito al rialzo
+
+        long_cond_a = rsi <= self.rsi_entry_oversold and close <= bb_lower and rsi_turning_up
+        long_cond_b = rsi < self.rsi_extreme_oversold and rsi_turning_up
         if long_cond_a or long_cond_b:
             logger.info(
-                "Segnale LONG (mean rev): RSI=%.1f, Close=%.2f, BB_lower=%.2f (cond_%s)",
-                rsi, close, bb_lower, "A" if long_cond_a else "B",
+                "Segnale LONG (mean rev): RSI=%.1f (prev=%.1f), Close=%.2f, BB_lower=%.2f (cond_%s)",
+                rsi, prev_rsi, close, bb_lower, "A" if long_cond_a else "B",
             )
             return "LONG"
 
-        short_cond_a = rsi >= self.rsi_entry_overbought and close >= bb_upper
-        short_cond_b = rsi > self.rsi_extreme_overbought
+        short_cond_a = rsi >= self.rsi_entry_overbought and close >= bb_upper and rsi_turning_down
+        short_cond_b = rsi > self.rsi_extreme_overbought and rsi_turning_down
         if short_cond_a or short_cond_b:
             logger.info(
-                "Segnale SHORT (mean rev): RSI=%.1f, Close=%.2f, BB_upper=%.2f (cond_%s)",
-                rsi, close, bb_upper, "A" if short_cond_a else "B",
+                "Segnale SHORT (mean rev): RSI=%.1f (prev=%.1f), Close=%.2f, BB_upper=%.2f (cond_%s)",
+                rsi, prev_rsi, close, bb_upper, "A" if short_cond_a else "B",
             )
             return "SHORT"
 
         logger.debug(
-            "No signal (mean rev): RSI=%.1f, close=%.1f, bb_lower=%.1f, bb_upper=%.1f",
-            rsi, close, bb_lower, bb_upper,
+            "No signal (mean rev): RSI=%.1f (prev=%.1f), close=%.1f",
+            rsi, prev_rsi, close,
         )
         return None
 
