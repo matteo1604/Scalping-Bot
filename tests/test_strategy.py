@@ -14,7 +14,12 @@ def strategy() -> CombinedStrategy:
     return CombinedStrategy()
 
 
-def _make_df(rsi_prev: float | None = None, **overrides) -> pd.DataFrame:
+def _make_df(
+    rsi_prev: float | None = None,
+    di_plus_prev: float | None = None,
+    di_minus_prev: float | None = None,
+    **overrides,
+) -> pd.DataFrame:
     """Helper: crea un DataFrame a DUE righe con indicatori.
 
     La riga [0] è il candle precedente (prev), la riga [1] è quello corrente.
@@ -33,6 +38,10 @@ def _make_df(rsi_prev: float | None = None, **overrides) -> pd.DataFrame:
     prev = defaults.copy()
     if rsi_prev is not None:
         prev["rsi"] = rsi_prev
+    if di_plus_prev is not None:
+        prev["di_plus"] = di_plus_prev
+    if di_minus_prev is not None:
+        prev["di_minus"] = di_minus_prev
     idx = pd.to_datetime(["2026-01-01 00:00", "2026-01-01 00:05"])
     return pd.DataFrame([prev, defaults], index=idx)
 
@@ -344,16 +353,12 @@ class TestTrendFollowing:
     """Trend following: DI+/DI- + RSI pullback quando ADX > threshold."""
 
     def test_long_in_uptrend_with_rsi_pullback(self, strategy):
-        """LONG in uptrend: DI+ > DI-, close > ema_slow, RSI 40-55, close > bb_middle."""
+        """LONG in uptrend: DI+ > DI-, close > ema_slow, RSI 40-55, DI+ in crescita."""
         df = _make_df(
-            adx=35.0,          # sopra threshold → trend mode
-            di_plus=30.0,      # DI+ > DI- → uptrend
-            di_minus=15.0,
-            rsi=48.0,          # pullback zone 40-55
-            close=35100.0,     # close > ema_slow (35000) e > bb_middle (35000)
-            ema_slow=35000.0,
-            volume=150.0,
-            volume_ma=100.0,
+            adx=35.0, di_plus=30.0, di_minus=15.0,
+            di_plus_prev=27.0,   # DI+ era 27, ora 30 → sta crescendo
+            rsi=48.0, close=35100.0, ema_slow=35000.0,
+            volume=150.0, volume_ma=100.0,
         )
         assert strategy.generate_signal(df) == "LONG"
 
@@ -414,16 +419,12 @@ class TestTrendFollowing:
         assert strategy.generate_signal(df) is None
 
     def test_short_in_downtrend_with_rsi_pullback(self, strategy):
-        """SHORT in downtrend: DI- > DI+, close < ema_slow, RSI 45-60, close < bb_middle."""
+        """SHORT in downtrend: DI- > DI+, close < ema_slow, RSI 45-60, DI- in crescita."""
         df = _make_df(
-            adx=35.0,          # sopra threshold → trend mode
-            di_plus=15.0,      # DI- > DI+ → downtrend
-            di_minus=30.0,
-            rsi=52.0,          # pullback zone 45-60
-            close=34900.0,     # close < ema_slow (35000) e < bb_middle (35000)
-            ema_slow=35000.0,
-            volume=150.0,
-            volume_ma=100.0,
+            adx=35.0, di_plus=15.0, di_minus=30.0,
+            di_minus_prev=27.0,  # DI- era 27, ora 30 → sta crescendo
+            rsi=52.0, close=34900.0, ema_slow=35000.0,
+            volume=150.0, volume_ma=100.0,
         )
         assert strategy.generate_signal(df) == "SHORT"
 
@@ -592,3 +593,47 @@ class TestRSITurningConfirmation:
         }
         df = pd.DataFrame([defaults], index=pd.to_datetime(["2026-01-01"]))
         assert strategy.generate_signal(df) is None
+
+
+class TestDITurningConfirmation:
+    """DI dominante deve essere in crescita per emettere segnale trend."""
+
+    def test_no_long_when_di_plus_not_growing(self, strategy):
+        """LONG bloccato se DI+ non sta aumentando (uptrend indebolito)."""
+        df = _make_df(
+            adx=35.0, di_plus=30.0, di_minus=15.0,
+            di_plus_prev=32.0,  # DI+ scende 32→30 = trend indebolisce
+            rsi=48.0, close=35100.0, ema_slow=35000.0,
+            volume=150.0, volume_ma=100.0,
+        )
+        assert strategy.generate_signal(df) is None
+
+    def test_no_short_when_di_minus_not_growing(self, strategy):
+        """SHORT bloccato se DI- non sta aumentando (downtrend indebolito)."""
+        df = _make_df(
+            adx=35.0, di_plus=15.0, di_minus=30.0,
+            di_minus_prev=32.0,  # DI- scende 32→30 = trend indebolisce
+            rsi=52.0, close=34900.0, ema_slow=35000.0,
+            volume=150.0, volume_ma=100.0,
+        )
+        assert strategy.generate_signal(df) is None
+
+    def test_long_when_di_plus_growing(self, strategy):
+        """LONG emesso se DI+ cresce (trend in rafforzamento)."""
+        df = _make_df(
+            adx=35.0, di_plus=30.0, di_minus=15.0,
+            di_plus_prev=27.0,  # DI+ sale 27→30
+            rsi=48.0, close=35100.0, ema_slow=35000.0,
+            volume=150.0, volume_ma=100.0,
+        )
+        assert strategy.generate_signal(df) == "LONG"
+
+    def test_short_when_di_minus_growing(self, strategy):
+        """SHORT emesso se DI- cresce (downtrend in rafforzamento)."""
+        df = _make_df(
+            adx=35.0, di_plus=15.0, di_minus=30.0,
+            di_minus_prev=27.0,  # DI- sale 27→30
+            rsi=52.0, close=34900.0, ema_slow=35000.0,
+            volume=150.0, volume_ma=100.0,
+        )
+        assert strategy.generate_signal(df) == "SHORT"

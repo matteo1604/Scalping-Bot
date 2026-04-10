@@ -138,7 +138,7 @@ class CombinedStrategy:
 
         # Branch sul regime di mercato
         if adx > self.adx_trend_threshold:
-            signal = self._trend_following_signal(row)
+            signal = self._trend_following_signal(df)
         else:
             signal = self._mean_reversion_signal(df)
 
@@ -207,12 +207,22 @@ class CombinedStrategy:
         )
         return None
 
-    def _trend_following_signal(self, row: pd.Series) -> str | None:
+    def _trend_following_signal(self, df: pd.DataFrame) -> str | None:
         """Genera segnale trend following (ADX > threshold).
 
-        LONG: DI+ > DI- AND close > ema_slow AND RSI in [bull_min, bull_max] AND close > bb_middle
-        SHORT: DI- > DI+ AND close < ema_slow AND RSI in [bear_min, bear_max] AND close < bb_middle
+        LONG: DI+ > DI- AND close > ema_slow AND RSI in [bull_min, bull_max]
+              AND close > bb_middle AND DI+ in crescita vs candela precedente.
+        SHORT: DI- > DI+ AND close < ema_slow AND RSI in [bear_min, bear_max]
+               AND close < bb_middle AND DI- in crescita vs candela precedente.
+
+        len(df) < 2 → None.
         """
+        if len(df) < 2:
+            return None
+
+        row = df.iloc[-1]
+        prev_row = df.iloc[-2]
+
         rsi = row["rsi"]
         close = row["close"]
         adx = row["adx"]
@@ -220,30 +230,39 @@ class CombinedStrategy:
         di_minus = row.get("di_minus")
         ema_slow = row.get("ema_slow")
         bb_middle = row.get("bb_middle")
+        prev_di_plus = prev_row.get("di_plus")
+        prev_di_minus = prev_row.get("di_minus")
 
-        if pd.isna(di_plus) or pd.isna(di_minus) or pd.isna(ema_slow) or pd.isna(bb_middle):
-            logger.debug("Nessun segnale trend: DI+/DI-/ema_slow/bb_middle NaN")
+        if any(pd.isna(v) for v in [di_plus, di_minus, ema_slow, bb_middle, prev_di_plus, prev_di_minus]):
+            logger.debug("Nessun segnale trend: colonne NaN")
             return None
 
+        di_plus_growing = di_plus > prev_di_plus    # trend rialzista si rafforza
+        di_minus_growing = di_minus > prev_di_minus  # trend ribassista si rafforza
+
         uptrend = di_plus > di_minus and close > ema_slow
-        if uptrend and self.trend_rsi_bull_min <= rsi <= self.trend_rsi_bull_max and close > bb_middle:
+        if (uptrend and di_plus_growing
+                and self.trend_rsi_bull_min <= rsi <= self.trend_rsi_bull_max
+                and close > bb_middle):
             logger.info(
-                "Segnale LONG (trend): ADX=%.1f, DI+=%.1f, DI-=%.1f, RSI=%.1f",
-                adx, di_plus, di_minus, rsi,
+                "Segnale LONG (trend): ADX=%.1f, DI+=%.1f (prev=%.1f), DI-=%.1f, RSI=%.1f",
+                adx, di_plus, prev_di_plus, di_minus, rsi,
             )
             return "LONG"
 
         downtrend = di_minus > di_plus and close < ema_slow
-        if downtrend and self.trend_rsi_bear_min <= rsi <= self.trend_rsi_bear_max and close < bb_middle:
+        if (downtrend and di_minus_growing
+                and self.trend_rsi_bear_min <= rsi <= self.trend_rsi_bear_max
+                and close < bb_middle):
             logger.info(
-                "Segnale SHORT (trend): ADX=%.1f, DI+=%.1f, DI-=%.1f, RSI=%.1f",
-                adx, di_plus, di_minus, rsi,
+                "Segnale SHORT (trend): ADX=%.1f, DI-=%.1f (prev=%.1f), DI+=%.1f, RSI=%.1f",
+                adx, di_minus, prev_di_minus, di_plus, rsi,
             )
             return "SHORT"
 
         logger.debug(
-            "No signal (trend): ADX=%.1f, DI+=%.1f, DI-=%.1f, RSI=%.1f, close=%.1f, ema_slow=%.1f",
-            adx, di_plus, di_minus, rsi, close, ema_slow,
+            "No signal (trend): ADX=%.1f, DI+=%.1f, DI-=%.1f, RSI=%.1f",
+            adx, di_plus, di_minus, rsi,
         )
         return None
 
