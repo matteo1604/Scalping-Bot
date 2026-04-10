@@ -84,6 +84,12 @@ PARTIAL_TP_RATIO: float = 0.5       # chiudi metà posizione al 50% del percorso
 PARTIAL_TP_SIZE_RATIO: float = 0.5   # percentuale della posizione da chiudere (50%)
 RSI_EXIT_MEAN_REVERSION: float = 50.0  # RSI target per uscita mean reversion
 
+# --- Loss Cooldown ---
+LOSS_COOLDOWN_BASE_CANDLES: int = 3      # candele di cooldown dopo 1 loss (3 × 5min = 15min)
+LOSS_COOLDOWN_MULTIPLIER: float = 2.0    # raddoppia per ogni loss consecutivo
+LOSS_COOLDOWN_MAX_CANDLES: int = 24      # massimo 24 candele (2 ore) prima dello stop giornaliero
+MAX_CONSECUTIVE_LOSSES: int = 5          # dopo 5 loss consecutivi, stop per la giornata
+
 # --- Notifiche ---
 SLACK_WEBHOOK_URL: str = os.getenv("SLACK_WEBHOOK_URL", "")
 
