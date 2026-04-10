@@ -10,6 +10,10 @@ Responsabilita':
 from __future__ import annotations
 
 from config.settings import (
+    LOSS_COOLDOWN_BASE_CANDLES,
+    LOSS_COOLDOWN_MAX_CANDLES,
+    LOSS_COOLDOWN_MULTIPLIER,
+    MAX_CONSECUTIVE_LOSSES,
     MAX_DAILY_LOSS_PCT,
     MAX_DAILY_TRADES,
     MAX_POSITION_SIZE_PCT,
@@ -48,6 +52,10 @@ class RiskManager:
         max_daily_loss_pct: Perdita massima giornaliera come % del capitale.
         stop_loss_pct: Fallback SL percentuale (senza ATR).
         take_profit_pct: Fallback TP percentuale (senza ATR).
+        loss_cooldown_base: Candele di cooldown dopo la prima loss.
+        loss_cooldown_multiplier: Moltiplicatore progressivo del cooldown.
+        loss_cooldown_max: Cap massimo candele di cooldown.
+        max_consecutive_losses: Loss consecutive prima dello streak stop.
     """
 
     def __init__(
@@ -62,6 +70,10 @@ class RiskManager:
         max_daily_loss_pct: float = MAX_DAILY_LOSS_PCT,
         stop_loss_pct: float = STOP_LOSS_PCT,
         take_profit_pct: float = TAKE_PROFIT_PCT,
+        loss_cooldown_base: int = LOSS_COOLDOWN_BASE_CANDLES,
+        loss_cooldown_multiplier: float = LOSS_COOLDOWN_MULTIPLIER,
+        loss_cooldown_max: int = LOSS_COOLDOWN_MAX_CANDLES,
+        max_consecutive_losses: int = MAX_CONSECUTIVE_LOSSES,
     ) -> None:
         self.risk_per_trade_pct = risk_per_trade_pct
         self.sl_atr_multiplier = sl_atr_multiplier
@@ -77,6 +89,15 @@ class RiskManager:
         # Contatori giornalieri
         self._daily_trades: int = 0
         self._daily_pnl: float = 0.0
+
+        # Loss cooldown
+        self.loss_cooldown_base = loss_cooldown_base
+        self.loss_cooldown_multiplier = loss_cooldown_multiplier
+        self.loss_cooldown_max = loss_cooldown_max
+        self.max_consecutive_losses = max_consecutive_losses
+        self._consecutive_losses: int = 0
+        self._cooldown_remaining: int = 0
+        self._streak_stopped: bool = False  # True se 5+ loss → stop giornaliero
 
     def calculate_levels(
         self,
@@ -206,7 +227,7 @@ class RiskManager:
     def can_trade(self, capital: float) -> bool:
         """Verifica se i limiti giornalieri consentono un nuovo trade.
 
-        Controlla sia il numero massimo di trade che la perdita massima giornaliera.
+        Controlla: trade giornalieri, perdita giornaliera, cooldown, streak stop.
 
         Args:
             capital: Capitale corrente in USDT.
@@ -216,15 +237,25 @@ class RiskManager:
         """
         if capital <= 0:
             return False
+
+        if self._streak_stopped:
+            logger.debug("Trading sospeso: streak stop attivo (%d loss consecutive)", self._consecutive_losses)
+            return False
+
+        if self._cooldown_remaining > 0:
+            logger.debug("Trading in cooldown: %d candele rimanenti", self._cooldown_remaining)
+            return False
+
         if self._daily_trades >= self.max_daily_trades:
-            logger.warning("Limite giornaliero trade raggiunto: %d/%d",
-                           self._daily_trades, self.max_daily_trades)
+            logger.debug("Trading sospeso: max daily trades raggiunto (%d)", self.max_daily_trades)
             return False
-        max_loss = capital * self.max_daily_loss_pct / 100.0
-        if self._daily_pnl <= -max_loss:
-            logger.warning("Limite perdita giornaliera raggiunto: %.2f/%.2f",
-                           self._daily_pnl, -max_loss)
-            return False
+
+        if capital > 0:
+            max_loss = capital * self.max_daily_loss_pct / 100.0
+            if self._daily_pnl <= -max_loss:
+                logger.debug("Trading sospeso: max daily loss raggiunto (%.2f)", self._daily_pnl)
+                return False
+
         return True
 
     def record_trade(self, pnl: float) -> None:
@@ -238,9 +269,73 @@ class RiskManager:
         logger.debug("Trade #%d registrato: PnL=%.2f, Totale=%.2f",
                       self._daily_trades, pnl, self._daily_pnl)
 
+    def record_trade_result(self, pnl: float) -> None:
+        """Registra il risultato di un trade e aggiorna il cooldown.
+
+        Se il trade e' in perdita, incrementa le loss consecutive e attiva il cooldown.
+        Se il trade e' in profitto, resetta le loss consecutive e il cooldown.
+
+        Args:
+            pnl: Profitto/perdita del trade.
+        """
+        if pnl < 0:
+            self._consecutive_losses += 1
+
+            if self._consecutive_losses >= self.max_consecutive_losses:
+                self._streak_stopped = True
+                logger.warning(
+                    "STREAK STOP: %d loss consecutive, trading sospeso per la giornata",
+                    self._consecutive_losses,
+                )
+            else:
+                # Cooldown progressivo: base × multiplier^(losses-1)
+                cooldown = int(
+                    self.loss_cooldown_base
+                    * (self.loss_cooldown_multiplier ** (self._consecutive_losses - 1))
+                )
+                self._cooldown_remaining = min(cooldown, self.loss_cooldown_max)
+                logger.info(
+                    "Loss #%d consecutiva — cooldown %d candele (%.0f min)",
+                    self._consecutive_losses,
+                    self._cooldown_remaining,
+                    self._cooldown_remaining * 5,
+                )
+        else:
+            if self._consecutive_losses > 0:
+                logger.info(
+                    "Win dopo %d loss consecutive — cooldown resettato",
+                    self._consecutive_losses,
+                )
+            self._consecutive_losses = 0
+            self._cooldown_remaining = 0
+
+    def tick_cooldown(self) -> None:
+        """Decrementa il cooldown di 1 candela. Chiamato ad ogni tick."""
+        if self._cooldown_remaining > 0:
+            self._cooldown_remaining -= 1
+            if self._cooldown_remaining == 0:
+                logger.info("Cooldown terminato — trading riabilitato")
+
+    @property
+    def consecutive_losses(self) -> int:
+        """Numero di loss consecutive correnti."""
+        return self._consecutive_losses
+
+    @property
+    def cooldown_remaining(self) -> int:
+        """Candele di cooldown rimanenti."""
+        return self._cooldown_remaining
+
+    @property
+    def streak_stopped(self) -> bool:
+        """True se il trading e' sospeso per streak di loss."""
+        return self._streak_stopped
+
     def reset_daily(self) -> None:
-        """Resetta i contatori giornalieri."""
-        logger.info("Reset contatori giornalieri (trades=%d, pnl=%.2f)",
-                     self._daily_trades, self._daily_pnl)
+        """Resetta tutti i contatori giornalieri."""
+        logger.info("Daily reset: contatori e cooldown azzerati")
         self._daily_trades = 0
         self._daily_pnl = 0.0
+        self._consecutive_losses = 0
+        self._cooldown_remaining = 0
+        self._streak_stopped = False
