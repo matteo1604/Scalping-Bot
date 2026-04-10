@@ -243,3 +243,129 @@ class TestDailyLimits:
     def test_zero_capital_cannot_trade(self, rm):
         """Capitale zero -> non puo' tradare."""
         assert rm.can_trade(capital=0.0) is False
+
+
+class TestLossCooldown:
+    """Test per il loss cooldown e streak protection."""
+
+    def test_no_cooldown_initially(self, rm):
+        """Nessun cooldown all'inizio."""
+        assert rm.cooldown_remaining == 0
+        assert rm.consecutive_losses == 0
+        assert rm.streak_stopped is False
+
+    def test_first_loss_sets_cooldown_3(self, rm):
+        """Prima loss → cooldown di 3 candele."""
+        rm.record_trade_result(-10.0)
+        assert rm.consecutive_losses == 1
+        assert rm.cooldown_remaining == 3
+
+    def test_second_loss_doubles_cooldown(self, rm):
+        """Seconda loss consecutiva → cooldown raddoppia a 6."""
+        rm.record_trade_result(-10.0)
+        rm._cooldown_remaining = 0  # simula fine cooldown
+        rm.record_trade_result(-10.0)
+        assert rm.consecutive_losses == 2
+        assert rm.cooldown_remaining == 6
+
+    def test_third_loss_cooldown_12(self, rm):
+        """Terza loss → cooldown 12."""
+        rm.record_trade_result(-10.0)
+        rm._cooldown_remaining = 0
+        rm.record_trade_result(-10.0)
+        rm._cooldown_remaining = 0
+        rm.record_trade_result(-10.0)
+        assert rm.consecutive_losses == 3
+        assert rm.cooldown_remaining == 12
+
+    def test_fourth_loss_cooldown_capped_at_24(self, rm):
+        """Quarta loss → cooldown 24 (cap massimo)."""
+        for i in range(4):
+            rm.record_trade_result(-10.0)
+            if i < 3:
+                rm._cooldown_remaining = 0
+        assert rm.consecutive_losses == 4
+        assert rm.cooldown_remaining == 24
+
+    def test_five_losses_triggers_streak_stop(self, rm):
+        """Quinta loss consecutiva → streak stop per la giornata."""
+        for i in range(5):
+            rm.record_trade_result(-10.0)
+            if i < 4:
+                rm._cooldown_remaining = 0
+        assert rm.consecutive_losses == 5
+        assert rm.streak_stopped is True
+
+    def test_win_resets_streak(self, rm):
+        """Un trade vincente resetta tutto."""
+        rm.record_trade_result(-10.0)
+        rm._cooldown_remaining = 0
+        rm.record_trade_result(-10.0)
+        assert rm.consecutive_losses == 2
+        # Ora vinci
+        rm.record_trade_result(5.0)
+        assert rm.consecutive_losses == 0
+        assert rm.cooldown_remaining == 0
+
+    def test_can_trade_false_during_cooldown(self, rm):
+        """can_trade() restituisce False durante il cooldown."""
+        rm.record_trade_result(-10.0)
+        assert rm.cooldown_remaining == 3
+        assert rm.can_trade(1000.0) is False
+
+    def test_can_trade_true_after_cooldown_expires(self, rm):
+        """can_trade() restituisce True dopo che il cooldown è scaduto."""
+        rm.record_trade_result(-10.0)
+        assert rm.can_trade(1000.0) is False
+        # Simula 3 tick
+        rm.tick_cooldown()
+        rm.tick_cooldown()
+        rm.tick_cooldown()
+        assert rm.cooldown_remaining == 0
+        assert rm.can_trade(1000.0) is True
+
+    def test_can_trade_false_after_streak_stop(self, rm):
+        """can_trade() restituisce False dopo streak stop."""
+        for i in range(5):
+            rm.record_trade_result(-10.0)
+            if i < 4:
+                rm._cooldown_remaining = 0
+        assert rm.can_trade(1000.0) is False
+
+    def test_tick_cooldown_decrements(self, rm):
+        """tick_cooldown() decrementa di 1."""
+        rm.record_trade_result(-10.0)
+        assert rm.cooldown_remaining == 3
+        rm.tick_cooldown()
+        assert rm.cooldown_remaining == 2
+        rm.tick_cooldown()
+        assert rm.cooldown_remaining == 1
+        rm.tick_cooldown()
+        assert rm.cooldown_remaining == 0
+
+    def test_tick_cooldown_does_not_go_negative(self, rm):
+        """tick_cooldown() non va sotto zero."""
+        rm.tick_cooldown()  # cooldown è già 0
+        assert rm.cooldown_remaining == 0
+
+    def test_daily_reset_clears_everything(self, rm):
+        """reset_daily() resetta cooldown, streak, e contatori."""
+        for i in range(5):
+            rm.record_trade_result(-10.0)
+            if i < 4:
+                rm._cooldown_remaining = 0
+        assert rm.streak_stopped is True
+        rm.reset_daily()
+        assert rm.consecutive_losses == 0
+        assert rm.cooldown_remaining == 0
+        assert rm.streak_stopped is False
+        assert rm.can_trade(1000.0) is True
+
+    def test_partial_tp_resets_streak(self, rm):
+        """Un PnL positivo (da partial TP) resetta lo streak."""
+        rm.record_trade_result(-10.0)
+        rm._cooldown_remaining = 0
+        rm.record_trade_result(-10.0)
+        assert rm.consecutive_losses == 2
+        rm.record_trade_result(3.0)  # partial TP positivo
+        assert rm.consecutive_losses == 0
