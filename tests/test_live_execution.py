@@ -98,7 +98,7 @@ class TestPreflightChecks:
                 with patch("src.main.SlackNotifier"):
                     with patch("src.main.BINANCE_API_KEY", ""):
                         tl = TradingLoop(mode="live", status_path=status_path)
-        assert tl._preflight_checks() is False
+                        assert tl._preflight_checks() is False
 
     def test_preflight_fails_low_balance(self, tmp_path):
         """Deve fallire se balance sotto il minimo."""
