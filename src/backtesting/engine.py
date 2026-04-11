@@ -98,9 +98,9 @@ class Backtester:
                 .dropna()
             )
             if len(df_1h) >= 25:
-                rsi_1h = ta.momentum.rsi(df_1h["close"], window=14)
-                ema_fast_1h = ta.trend.ema_indicator(df_1h["close"], window=9)
-                ema_slow_1h = ta.trend.ema_indicator(df_1h["close"], window=21)
+                rsi_1h = ta.momentum.rsi(df_1h["close"], window=htf_filter.rsi_period)
+                ema_fast_1h = ta.trend.ema_indicator(df_1h["close"], window=htf_filter.ema_fast_period)
+                ema_slow_1h = ta.trend.ema_indicator(df_1h["close"], window=htf_filter.ema_slow_period)
 
                 for idx_h, ts in enumerate(df_1h.index):
                     r = rsi_1h.iloc[idx_h]
