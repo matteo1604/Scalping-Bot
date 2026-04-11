@@ -97,11 +97,17 @@ class Backtester:
                 .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
                 .dropna()
             )
-            if len(df_1h) >= 25:
+            # Threshold mirrors HTFFilter.compute_indicators: max(ema_slow, rsi_period) + 5
+            min_rows = htf_filter.ema_slow_period + 5
+            if len(df_1h) >= min_rows:
                 rsi_1h = ta.momentum.rsi(df_1h["close"], window=htf_filter.rsi_period)
                 ema_fast_1h = ta.trend.ema_indicator(df_1h["close"], window=htf_filter.ema_fast_period)
                 ema_slow_1h = ta.trend.ema_indicator(df_1h["close"], window=htf_filter.ema_slow_period)
 
+                # NOTE: la logica RSI/EMA/trend qui duplica HTFFilter.compute_indicators.
+                # Il loop è O(N_1h), eseguito una sola volta — chiamare compute_indicators
+                # su slice crescenti sarebbe O(N_1h²) e inaccettabile.
+                # Se HTFFilter.compute_indicators cambia, aggiornare anche questo blocco.
                 for idx_h, ts in enumerate(df_1h.index):
                     r = rsi_1h.iloc[idx_h]
                     ef = ema_fast_1h.iloc[idx_h]
