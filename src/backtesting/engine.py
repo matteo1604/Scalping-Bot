@@ -16,8 +16,10 @@ import os
 from datetime import datetime, date
 
 import pandas as pd
+import ta
 
 from config.settings import ADX_TREND_THRESHOLD
+from src.indicators.htf_filter import HTFFilter
 from src.backtesting.metrics import (
     win_rate,
     profit_factor,
@@ -83,6 +85,34 @@ class Backtester:
             data = data.dropna()
         else:
             data = df
+
+        # --- Pre-calcola dati HTF (1h) per filtro multi-timeframe ---
+        htf_filter = HTFFilter()
+        htf_series: dict = {}
+
+        try:
+            df_1h = (
+                data[["open", "high", "low", "close", "volume"]]
+                .resample("1h")
+                .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
+                .dropna()
+            )
+            if len(df_1h) >= 25:
+                rsi_1h = ta.momentum.rsi(df_1h["close"], window=14)
+                ema_fast_1h = ta.trend.ema_indicator(df_1h["close"], window=9)
+                ema_slow_1h = ta.trend.ema_indicator(df_1h["close"], window=21)
+
+                for idx_h, ts in enumerate(df_1h.index):
+                    r = rsi_1h.iloc[idx_h]
+                    ef = ema_fast_1h.iloc[idx_h]
+                    es = ema_slow_1h.iloc[idx_h]
+                    if pd.isna(r) or pd.isna(ef) or pd.isna(es):
+                        htf_series[ts] = {"rsi_1h": None, "trend_1h": "NEUTRAL"}
+                    else:
+                        trend = "UP" if ef > es else ("DOWN" if ef < es else "NEUTRAL")
+                        htf_series[ts] = {"rsi_1h": float(r), "trend_1h": trend}
+        except Exception as e:
+            logger.warning("HTF precompute fallito: %s — filtro disabilitato", e)
 
         trades: list[dict] = []
         position: dict | None = None
@@ -211,7 +241,14 @@ class Backtester:
                 window = data.iloc[: i + 1]
                 signal = self.strategy.generate_signal(window)
                 if signal in ("LONG", "SHORT"):
-                    pending_signal = signal  # entry alla prossima candela
+                    # Filtro HTF: usa l'ultima ora COMPLETATA (no look-ahead bias)
+                    candle_ts = data.index[i]
+                    last_completed_hour = candle_ts.floor("1h") - pd.Timedelta(hours=1)
+                    htf_data = htf_series.get(last_completed_hour, {"rsi_1h": None, "trend_1h": "NEUTRAL"})
+                    adx_now = float(data.iloc[i].get("adx", 0.0))
+                    strategy_mode = "trend" if adx_now > ADX_TREND_THRESHOLD else "reversion"
+                    if htf_filter.allows_signal(signal, strategy_mode, htf_data):
+                        pending_signal = signal
 
             equity_curve.append(equity)
 
