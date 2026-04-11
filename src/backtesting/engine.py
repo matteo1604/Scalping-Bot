@@ -98,7 +98,7 @@ class Backtester:
                 .dropna()
             )
             # Threshold mirrors HTFFilter.compute_indicators: max(ema_slow, rsi_period) + 5
-            min_rows = htf_filter.ema_slow_period + 5
+            min_rows = max(htf_filter.ema_slow_period, htf_filter.rsi_period) + 5
             if len(df_1h) >= min_rows:
                 rsi_1h = ta.momentum.rsi(df_1h["close"], window=htf_filter.rsi_period)
                 ema_fast_1h = ta.trend.ema_indicator(df_1h["close"], window=htf_filter.ema_fast_period)
