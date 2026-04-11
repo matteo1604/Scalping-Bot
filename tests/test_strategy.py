@@ -115,8 +115,8 @@ class TestLongSignal:
         assert strategy.generate_signal(df) is None
 
     def test_long_rsi_at_new_oversold_threshold(self, strategy):
-        """LONG quando RSI == RSI_ENTRY_OVERSOLD (30) con close <= bb_lower."""
-        df = _make_df(rsi=30.0, rsi_prev=27.0, close=34490.0, volume=150.0, volume_ma=100.0, adx=15.0)
+        """LONG quando RSI == RSI_ENTRY_OVERSOLD (28) con close <= bb_lower."""
+        df = _make_df(rsi=28.0, rsi_prev=25.0, close=34490.0, volume=150.0, volume_ma=100.0, adx=15.0)
         assert strategy.generate_signal(df) == "LONG"
 
     def test_no_long_when_rsi_above_oversold_and_no_bb(self, strategy):
@@ -187,8 +187,8 @@ class TestShortSignal:
         assert strategy.generate_signal(df) is None
 
     def test_short_rsi_at_new_overbought_threshold(self, strategy):
-        """SHORT quando RSI == RSI_ENTRY_OVERBOUGHT (70) con close >= bb_upper."""
-        df = _make_df(rsi=70.0, rsi_prev=73.0, close=35510.0, volume=150.0, volume_ma=100.0, adx=15.0)
+        """SHORT quando RSI == RSI_ENTRY_OVERBOUGHT (72) con close >= bb_upper."""
+        df = _make_df(rsi=72.0, rsi_prev=75.0, close=35510.0, volume=150.0, volume_ma=100.0, adx=15.0)
         assert strategy.generate_signal(df) == "SHORT"
 
     def test_no_short_when_rsi_below_overbought_and_no_bb(self, strategy):
@@ -355,7 +355,7 @@ class TestTrendFollowing:
     def test_long_in_uptrend_with_rsi_pullback(self, strategy):
         """LONG in uptrend: DI+ > DI-, close > ema_slow, RSI 40-55, DI+ in crescita."""
         df = _make_df(
-            adx=35.0, di_plus=30.0, di_minus=15.0,
+            adx=36.0, di_plus=30.0, di_minus=15.0,
             di_plus_prev=27.0,   # DI+ era 27, ora 30 → sta crescendo
             rsi=48.0, close=35100.0, ema_slow=35000.0,
             volume=150.0, volume_ma=100.0,
@@ -365,7 +365,7 @@ class TestTrendFollowing:
     def test_no_long_in_uptrend_rsi_too_low(self, strategy):
         """No LONG in uptrend se RSI < 40 (non è pullback, è ipervenduto)."""
         df = _make_df(
-            adx=35.0,
+            adx=36.0,
             di_plus=30.0,
             di_minus=15.0,
             rsi=35.0,          # sotto la pullback zone (40)
@@ -379,7 +379,7 @@ class TestTrendFollowing:
     def test_no_long_in_uptrend_rsi_too_high(self, strategy):
         """No LONG in uptrend se RSI > 55 (momentum già esaurito)."""
         df = _make_df(
-            adx=35.0,
+            adx=36.0,
             di_plus=30.0,
             di_minus=15.0,
             rsi=60.0,          # sopra la pullback zone (55)
@@ -393,7 +393,7 @@ class TestTrendFollowing:
     def test_no_long_in_uptrend_close_below_ema_slow(self, strategy):
         """No LONG in uptrend se close <= ema_slow (trend non confermato dal prezzo)."""
         df = _make_df(
-            adx=35.0,
+            adx=36.0,
             di_plus=30.0,
             di_minus=15.0,
             rsi=48.0,
@@ -407,7 +407,7 @@ class TestTrendFollowing:
     def test_no_long_when_di_minus_greater_than_di_plus(self, strategy):
         """No LONG in trend mode se DI- > DI+ (downtrend)."""
         df = _make_df(
-            adx=35.0,
+            adx=36.0,
             di_plus=15.0,
             di_minus=30.0,     # downtrend
             rsi=48.0,
@@ -421,7 +421,7 @@ class TestTrendFollowing:
     def test_short_in_downtrend_with_rsi_pullback(self, strategy):
         """SHORT in downtrend: DI- > DI+, close < ema_slow, RSI 45-60, DI- in crescita."""
         df = _make_df(
-            adx=35.0, di_plus=15.0, di_minus=30.0,
+            adx=36.0, di_plus=15.0, di_minus=30.0,
             di_minus_prev=27.0,  # DI- era 27, ora 30 → sta crescendo
             rsi=52.0, close=34900.0, ema_slow=35000.0,
             volume=150.0, volume_ma=100.0,
@@ -431,7 +431,7 @@ class TestTrendFollowing:
     def test_no_short_in_downtrend_rsi_too_high(self, strategy):
         """No SHORT in downtrend se RSI > 60 (non è pullback)."""
         df = _make_df(
-            adx=35.0,
+            adx=36.0,
             di_plus=15.0,
             di_minus=30.0,
             rsi=65.0,          # sopra la pullback zone (60)
@@ -445,7 +445,7 @@ class TestTrendFollowing:
     def test_no_short_in_downtrend_close_above_ema_slow(self, strategy):
         """No SHORT in downtrend se close >= ema_slow."""
         df = _make_df(
-            adx=35.0,
+            adx=36.0,
             di_plus=15.0,
             di_minus=30.0,
             rsi=52.0,
@@ -459,7 +459,7 @@ class TestTrendFollowing:
     def test_trend_signal_blocked_by_volume(self, strategy):
         """Trend following richiede volume ok come mean reversion."""
         df = _make_df(
-            adx=35.0,
+            adx=36.0,
             di_plus=30.0,
             di_minus=15.0,
             rsi=48.0,
@@ -512,25 +512,25 @@ class TestShouldExit:
 
     def test_trend_long_exit_on_di_cross(self, strategy):
         """Trend LONG esce quando DI- > DI+."""
-        df = _make_df(rsi=50.0, adx=35.0, di_plus=18.0, di_minus=25.0)
+        df = _make_df(rsi=50.0, adx=36.0, di_plus=18.0, di_minus=25.0)
         pos = {"side": "LONG", "strategy": "trend"}
         assert strategy.should_exit(df, pos) == "signal_exit"
 
     def test_trend_long_no_exit_when_di_aligned(self, strategy):
         """Trend LONG non esce se DI+ > DI-."""
-        df = _make_df(rsi=50.0, adx=35.0, di_plus=28.0, di_minus=18.0)
+        df = _make_df(rsi=50.0, adx=36.0, di_plus=28.0, di_minus=18.0)
         pos = {"side": "LONG", "strategy": "trend"}
         assert strategy.should_exit(df, pos) is None
 
     def test_trend_short_exit_on_di_cross(self, strategy):
         """Trend SHORT esce quando DI+ > DI-."""
-        df = _make_df(rsi=50.0, adx=35.0, di_plus=28.0, di_minus=18.0)
+        df = _make_df(rsi=50.0, adx=36.0, di_plus=28.0, di_minus=18.0)
         pos = {"side": "SHORT", "strategy": "trend"}
         assert strategy.should_exit(df, pos) == "signal_exit"
 
     def test_trend_short_no_exit_when_di_aligned(self, strategy):
         """Trend SHORT non esce se DI- > DI+."""
-        df = _make_df(rsi=50.0, adx=35.0, di_plus=15.0, di_minus=28.0)
+        df = _make_df(rsi=50.0, adx=36.0, di_plus=15.0, di_minus=28.0)
         pos = {"side": "SHORT", "strategy": "trend"}
         assert strategy.should_exit(df, pos) is None
 
@@ -601,7 +601,7 @@ class TestDITurningConfirmation:
     def test_no_long_when_di_plus_not_growing(self, strategy):
         """LONG bloccato se DI+ non sta aumentando (uptrend indebolito)."""
         df = _make_df(
-            adx=35.0, di_plus=30.0, di_minus=15.0,
+            adx=36.0, di_plus=30.0, di_minus=15.0,
             di_plus_prev=32.0,  # DI+ scende 32→30 = trend indebolisce
             rsi=48.0, close=35100.0, ema_slow=35000.0,
             volume=150.0, volume_ma=100.0,
@@ -611,7 +611,7 @@ class TestDITurningConfirmation:
     def test_no_short_when_di_minus_not_growing(self, strategy):
         """SHORT bloccato se DI- non sta aumentando (downtrend indebolito)."""
         df = _make_df(
-            adx=35.0, di_plus=15.0, di_minus=30.0,
+            adx=36.0, di_plus=15.0, di_minus=30.0,
             di_minus_prev=32.0,  # DI- scende 32→30 = trend indebolisce
             rsi=52.0, close=34900.0, ema_slow=35000.0,
             volume=150.0, volume_ma=100.0,
@@ -621,7 +621,7 @@ class TestDITurningConfirmation:
     def test_long_when_di_plus_growing(self, strategy):
         """LONG emesso se DI+ cresce (trend in rafforzamento)."""
         df = _make_df(
-            adx=35.0, di_plus=30.0, di_minus=15.0,
+            adx=36.0, di_plus=30.0, di_minus=15.0,
             di_plus_prev=27.0,  # DI+ sale 27→30
             rsi=48.0, close=35100.0, ema_slow=35000.0,
             volume=150.0, volume_ma=100.0,
@@ -631,7 +631,7 @@ class TestDITurningConfirmation:
     def test_short_when_di_minus_growing(self, strategy):
         """SHORT emesso se DI- cresce (downtrend in rafforzamento)."""
         df = _make_df(
-            adx=35.0, di_plus=15.0, di_minus=30.0,
+            adx=36.0, di_plus=15.0, di_minus=30.0,
             di_minus_prev=27.0,  # DI- sale 27→30
             rsi=52.0, close=34900.0, ema_slow=35000.0,
             volume=150.0, volume_ma=100.0,
